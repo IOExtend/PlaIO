@@ -56,6 +56,7 @@ if (Test-Path (Join-Path $cliStage 'PlaIO.Cli.exe')) {
 }
 Copy-Item (Join-Path $root 'README.md') $cliStage
 Copy-Item (Join-Path $root 'LICENSE') $cliStage
+Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.md') $cliStage
 New-Zip $cliStage (Join-Path $Output "PlaIO-Cli-$version.zip")
 
 # 3. CLI (.NET 10 Runtime)
@@ -68,6 +69,7 @@ if (Test-Path (Join-Path $cli10Stage 'PlaIO.Cli.exe')) {
 }
 Copy-Item (Join-Path $root 'README.md') $cli10Stage
 Copy-Item (Join-Path $root 'LICENSE') $cli10Stage
+Copy-Item (Join-Path $root 'THIRD-PARTY-NOTICES.md') $cli10Stage
 New-Zip $cli10Stage (Join-Path $Output "PlaIO-Cli-$version-net10.0.zip")
 
 # 4. NuGet packages
