@@ -1,0 +1,19 @@
+- name: Getting started
+  href: getting-started.md
+- name: Guides
+  href: public-api.md
+  items:
+    - name: Public API
+      href: public-api.md
+    - name: Command line and exit codes
+      href: cli.md
+    - name: Dependencies
+      href: dependencies.md
+    - name: Private test fixtures
+      href: test-fixtures.md
+- name: API reference
+  href: api/
+- name: GitHub
+  href: https://github.com/IOExtend/PlaIO
+- name: DeepWiki
+  href: https://deepwiki.com/IOExtend/PlaIO

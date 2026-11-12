@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Reads the container of Archicad project files (.pla, .pln) and the cover image of .bimx files. Pure managed code, no dependencies.</Description>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>PlaIO</RootNamespace>
+    <AssemblyName>PlaIO</AssemblyName>
+    <PackageId>PlaIO</PackageId>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PlaIO.Tests" />
+  </ItemGroup>
+
+</Project>

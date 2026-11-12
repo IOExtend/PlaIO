@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>PlaIO.Cli</PackageId>
+    <Description>Command line tool that reports the container structure of Archicad files (.pla, .pln, .bimx).</Description>
+    <OutputType>Exe</OutputType>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>plaio</ToolCommandName>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <RootNamespace>PlaIO.CommandLine</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PlaIO\PlaIO.csproj" />
+  </ItemGroup>
+
+</Project>

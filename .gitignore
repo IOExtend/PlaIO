@@ -1,0 +1,16 @@
+[Bb]in/
+[Oo]bj/
+TestResults/
+.vs/
+*.user
+*.suo
+*.nupkg
+*.snupkg
+artifacts/
+
+# Private sample files (see README); never committed.
+test_files/
+
+# Documentation site (DocFX output and generated API pages)
+_site/
+docs/api/

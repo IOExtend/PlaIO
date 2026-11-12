@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PlaIO/PlaIO.csproj" />
+    <Project Path="src/PlaIO.Cli/PlaIO.Cli.csproj" />
+  </Folder>
+  <Project Path="tests/PlaIO.Tests/PlaIO.Tests.csproj" />
+</Solution>
