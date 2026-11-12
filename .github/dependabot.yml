@@ -4,6 +4,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # 11.x pulls System.IO.Hashing 11, which does not support net8.0 and adds build warnings.
+      - dependency-name: Microsoft.SourceLink.GitHub
+        versions: ["11.x"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
