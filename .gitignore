@@ -14,3 +14,11 @@ test_files/
 # Documentation site (DocFX output and generated API pages)
 _site/
 docs/api/
+
+# Archicad and BIMx files never go into the repository
+*.pla
+*.pln
+*.bimx
+
+# Local secrets
+.env

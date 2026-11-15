@@ -32,6 +32,8 @@ documentation. Test inputs are built synthetically in the tests;
 tests that need private files read them from folders named by
 environment variables and are skipped when those folders are not set.
 
+Do not put personal data in code, documentation, test data or commit metadata. Use your GitHub noreply address as the commit email.
+
 ## Development setup
 
 Install the .NET SDK specified by `global.json`. It currently specifies
