@@ -6,6 +6,14 @@ API between minor releases.
 
 ## [Unreleased]
 
+### Added
+
+- The `PlaIO.Scene` adapter project (namespace `PlaIO.Scene`): `PlaSceneReader.Read(path)` turns a `.pla` or `.pln`
+  container into an `IOScene` `SceneDocument` — one model per file with the frozen `Key` derivation (the
+  `PlaSceneOptions.ModelKey`, else the file name), no elements yet (the container reader does not decode element
+  contents), and the `container-only` diagnostic. The project is `IsPackable=false` and is not published; it ships on a
+  `PlaIO` release tag when the reader decodes elements and geometry. See `docs/scene.md`.
+
 ### Changed
 
 - The release workflow follows the IOExtend release order: the NuGet packages are pushed before the GitHub release is

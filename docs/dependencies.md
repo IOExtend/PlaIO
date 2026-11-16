@@ -7,7 +7,11 @@ Build settings shared by every project live in `Directory.Build.props`; the SDK 
 ## Runtime packages (library and tool)
 
 None. The library and the command line tool use only the .NET base class library, so the published packages bring no
-third-party code with them.
+third-party code with them. No engine package depends on another IOExtend package.
+
+The `PlaIO.Scene` adapter (not published yet) depends on [`IOScene`](https://github.com/IOExtend/IOScene)
+`[0.1.1, 0.2.0-0.0)`: any patch of the IOScene 0.1 line, no preview of the next (breaking) minor. `IOScene` itself has
+no dependencies.
 
 ## Build-time packages
 
@@ -19,7 +23,7 @@ It is referenced by every project with `PrivateAssets` all, so it is not a depen
 
 ## Test packages
 
-Pinned to exact versions: Microsoft.NET.Test.Sdk 18.11.0, xunit 2.9.3 and xunit.runner.visualstudio 4.0.1.
+Pinned to exact versions: Microsoft.NET.Test.Sdk 18.12.0, xunit 2.9.3 and xunit.runner.visualstudio 4.0.1.
 They are referenced only by `tests/PlaIO.Tests`, which is not packed.
 
 ## Auditing
@@ -42,5 +46,5 @@ Re-run the audit when changing dependencies.
 and `ContinuousIntegrationBuild` true when `CI`, `GITHUB_ACTIONS` or `TF_BUILD` is set. It also sets `PathMap` on every
 build, not only on CI, so the folder of the build machine does not appear in PDBs and binaries. `src/Directory.Build.props`
 and `tests/Directory.Build.props` import it and set `TreatWarningsAsErrors` true; the tests file also turns
-`GenerateDocumentationFile` off. The library generates its XML documentation file, which feeds the
-[API reference](api/PlaIO.yml). The library, the CLI and the tests target `net8.0` and `net10.0`.
+`GenerateDocumentationFile` off. The library and the adapter generate their XML documentation files, which feed the
+[API reference](api/PlaIO.yml). The library, the CLI, the adapter and the tests target `net8.0` and `net10.0`.
