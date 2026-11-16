@@ -125,6 +125,42 @@ public sealed class PlaDocument : IDisposable
         }
     }
 
+    /// <summary>Walks the chunk chain of a mode 2 (<see cref="PlaBlockMode.Lz"/>) block payload without decompressing
+    /// it: every chunk with its offset, header length, body size, output size and compression flag.</summary>
+    /// <remarks>The compressed runs inside the chunks are not decoded (their algorithm is not documented yet), but the
+    /// chain itself is verified: the chunk headers must consume the payload exactly and the sum of the chunk output
+    /// sizes must equal the block's <see cref="PlaBlock.UnpackedSize"/>. Blocks whose chain does not add up are
+    /// reported as invalid, which in real files marks a scanner false positive.</remarks>
+    /// <exception cref="NotSupportedException">The block does not use mode 2 (<see cref="PlaBlockMode.Lz"/>).</exception>
+    /// <exception cref="InvalidDataException">A chunk header does not fit, a chunk runs past the payload, or the chain
+    /// does not add up to the declared size.</exception>
+    /// <exception cref="ArgumentException">The block is not one of the <see cref="Blocks"/> of this document.</exception>
+    public IReadOnlyList<PlaLzChunk> ReadChunks(PlaBlock block)
+    {
+        ArgumentNullException.ThrowIfNull(block);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        int index = _blocks.BinarySearch(block, ByOffset);
+        if (index < 0 || !ReferenceEquals(_blocks[index], block))
+            throw new ArgumentException($"The block at 0x{block.Offset:x} is not in the block index of this document.", nameof(block));
+        if (block.Mode != PlaBlockMode.Lz)
+            throw new NotSupportedException($"Block at 0x{block.Offset:x} uses payload mode {block.Mode}; only mode 2 (LZ) payloads are chunked.");
+
+        var payload = new byte[block.PackedSize];
+        StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, payload, $"the payload of the block at 0x{block.Offset:x}");
+        List<PlaLzChunk> chunks;
+        try
+        {
+            chunks = LzChunkWalker.Walk(payload, block.Offset);
+        }
+        catch (InvalidDataException e)
+        {
+            throw new InvalidDataException($"Block at 0x{block.Offset:x}: {e.Message}", e);
+        }
+        if (chunks.Sum(c => c.UnpackedSize) != block.UnpackedSize)
+            throw new InvalidDataException($"Mode-2 block at 0x{block.Offset:x}: the chunks produce {chunks.Sum(c => c.UnpackedSize)} bytes in total, the block declares {block.UnpackedSize}.");
+        return chunks.AsReadOnly();
+    }
+
     /// <summary>Searches every raw block large enough for 64 records for an object directory (at most one per block).
     /// Computed on each call; reads the raw blocks one at a time. Mode-1 payloads are not searched.</summary>
     /// <remarks>The work grows with the total size of the raw blocks: each block gets a linear pre-check at all 30 record

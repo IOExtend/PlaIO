@@ -4,6 +4,15 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); versions before 1.0 may change the
 API between minor releases.
 
+## [Unreleased]
+
+### Added
+
+- `PlaDocument.ReadChunks(PlaBlock)`: the chunk chain of a mode 2 (LZ) block payload without decompression. Each
+  `PlaLzChunk` reports `Offset`, `HeaderLength` (9 or 3), `PackedSize` (body), `UnpackedSize` and `IsCompressed`.
+  The chain is verified against the block's declared size; a chain that does not add up throws `InvalidDataException`.
+  The compressed runs themselves are not decoded yet.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added
