@@ -23,6 +23,16 @@ API between minor releases.
 - `PlaDocument.ReadPayload` no longer throws `NotSupportedException` for mode 2 blocks: all three storage modes
   (raw, zero mask, LZ) decode now.
 
+### Added
+
+- `PlaDocument.OpenStream` and `PlaStream`: the decoded global stream of the document (every block's payload decoded in
+  block order) and the extents of it. A directory record's position and count name a byte extent of the stream — the
+  object's data — so `PlaStream.ReadExtent(ObjectDirectoryRecord)` returns an object's bytes; extents can also be read
+  by position and count. The stream is a snapshot that holds the whole decoded file in memory and the document may be
+  disposed afterwards.
+- The position and count of `ObjectDirectoryRecord` are now documented: a byte extent of the decoded global stream,
+  confirmed against the object directories of real files.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added

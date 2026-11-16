@@ -149,6 +149,31 @@ public class SampleTests(SampleCorpus corpus) : IClassFixture<SampleCorpus>
     }
 
     [SkippableFact]
+    public void EveryDirectoryRecordFitsTheGlobalStream()
+    {
+        foreach (var sample in corpus.Fdb)
+        {
+            var stream = sample.Document.OpenStream();
+            foreach (var d in sample.Document.FindDirectories())
+            {
+                string where = $"{sample.Name}: directory in block 0x{d.Block.Offset:x}";
+                int checkedReads = 0;
+                foreach (var r in d.Records)
+                {
+                    Assert.True(r.Position <= (ulong)stream.Length && r.Count <= (ulong)stream.Length - r.Position,
+                        $"{where}: record {r.ObjectId} (class {r.ClassNumber}) addresses {r.Position}+{r.Count} of a {stream.Length}-byte stream");
+                    // A few full reads exercise the copy, not every record (the streams are large).
+                    if (r.Count > 0 && checkedReads < 3)
+                    {
+                        Assert.Equal((long)r.Count, stream.ReadExtent(r).Length);
+                        checkedReads++;
+                    }
+                }
+            }
+        }
+    }
+
+    [SkippableFact]
     public void EveryFdbSampleHasADirectoryOfMostlyAbuttingExtents()
     {
         foreach (var sample in corpus.Fdb)

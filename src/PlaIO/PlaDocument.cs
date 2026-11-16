@@ -158,6 +158,16 @@ public sealed class PlaDocument : IDisposable
         }
     }
 
+    /// <summary>Decodes the whole file once into the global stream: the raw payloads, the full zero-mask decodes and the
+    /// mode-2 outputs, in block order. Blocks that do not decode to their declared size (false entries of the scan) are
+    /// skipped. The stream is a snapshot: it holds the whole decoded file in memory and the document may be disposed
+    /// afterwards. Object directory records address the stream by position and count.</summary>
+    public PlaStream OpenStream()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return new PlaStream(DecodeGlobalWindow(out _));
+    }
+
     /// <summary>Appends the decoded payload of one block to the mode-2 global window, or leaves the window unchanged when
     /// the block does not decode to its declared size (a false entry of the scan is not part of the real stream, so a
     /// partial decode is rolled back). Returns whether the block was appended.</summary>
