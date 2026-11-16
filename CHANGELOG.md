@@ -8,10 +8,17 @@ API between minor releases.
 
 ### Added
 
-- `PlaDocument.ReadChunks(PlaBlock)`: the chunk chain of a mode 2 (LZ) block payload without decompression. Each
-  `PlaLzChunk` reports `Offset`, `HeaderLength` (9 or 3), `PackedSize` (body), `UnpackedSize` and `IsCompressed`.
-  The chain is verified against the block's declared size; a chain that does not add up throws `InvalidDataException`.
-  The compressed runs themselves are not decoded yet.
+- `PlaDocument.ReadPayload` decodes mode 2 (LZ) payloads. The mode 2 token stream produces exactly the block's declared
+  unpacked size and may reference the decompressed output of any preceding block of the file, so `ReadPayload` for a
+  mode 2 block decodes the file from the start into one global window; the cost of the call grows with the size of the
+  file. Preceding blocks that do not decode (false entries of the scan) are skipped and leave the window unchanged. A
+  stream that does not produce the declared size, or a back-reference beyond the decoded stream, throws
+  `InvalidDataException`.
+
+### Changed
+
+- `PlaDocument.ReadPayload` no longer throws `NotSupportedException` for mode 2 blocks: all three storage modes
+  (raw, zero mask, LZ) decode now.
 
 ## [0.1.0] - 2026-11-12
 

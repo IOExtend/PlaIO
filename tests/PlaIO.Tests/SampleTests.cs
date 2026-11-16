@@ -137,14 +137,15 @@ public class SampleTests(SampleCorpus corpus) : IClassFixture<SampleCorpus>
     }
 
     [SkippableFact]
-    public void ReadingAnLzBlockThrowsNotSupported()
+    public void EveryLzBlockDecodesAndOnlyFalseEntriesAreSkipped()
     {
-        var (sample, block) = corpus.Fdb
-            .SelectMany(s => s.Document.Blocks.Where(b => b.Mode == PlaBlockMode.Lz).Select(b => (s, b)))
-            .FirstOrDefault();
-        Assert.True(block != null, "No sample has a mode-2 block.");
-        var e = Assert.Throws<NotSupportedException>(() => sample.Document.ReadPayload(block));
-        Assert.Contains("mode 2", e.Message);
+        foreach (var sample in corpus.Fdb)
+        {
+            sample.Document.DecodeGlobalWindow(out var skipped);
+            string where = $"{sample.Name}: {skipped.Count} of {sample.Document.Blocks.Count} blocks skipped";
+            Assert.True(skipped.All(b => b.Mode != PlaBlockMode.Lz), $"{where}; a mode-2 block did not decode");
+            Assert.True(skipped.Count <= 0.01 * sample.Document.Blocks.Count, where);
+        }
     }
 
     [SkippableFact]
