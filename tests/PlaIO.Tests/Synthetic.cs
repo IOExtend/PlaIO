@@ -125,30 +125,6 @@ internal static class Synthetic
     /// <summary>A container: the 32-byte header, then the parts from offset 32.</summary>
     public static byte[] Fdb(params byte[][] parts) => Header().Concat(parts.SelectMany(p => p)).ToArray();
 
-    /// <summary>A mode-2 chunk header followed by <paramref name="body"/>. Long header (9 bytes) when
-    /// <paramref name="longHeader"/>; bit 0 of the flags marks the body compressed.</summary>
-    public static byte[] LzChunk(bool compressed, bool longHeader, long bodySize, long unpacked, byte[]? body = null)
-    {
-        byte flags = (byte)((compressed ? 0x01 : 0x00) | (longHeader ? 0x02 : 0x00) | 0x44);
-        var bytes = new List<byte> { flags };
-        if (longHeader)
-        {
-            bytes.AddRange(Le32((uint)bodySize + 9));
-            bytes.AddRange(Le32((uint)unpacked));
-        }
-        else
-        {
-            if (bodySize + 3 > 255 || unpacked > 255) throw new ArgumentOutOfRangeException(nameof(bodySize), "A short-header chunk holds at most 252 body bytes.");
-            bytes.Add((byte)(bodySize + 3));
-            bytes.Add((byte)unpacked);
-        }
-        bytes.AddRange(body ?? new byte[bodySize]);
-        return bytes.ToArray();
-    }
-
-    /// <summary>An LZ payload: the chunk chain from the parts, then <paramref name="tail"/> zero bytes.</summary>
-    public static byte[] LzPayload(byte[][] chunks, int tail = 0) => Concat(chunks).Concat(new byte[tail]).ToArray();
-
     /// <summary>A PNG: the signature and each chunk as [BE length][type][data][CRC]; the CRC is zero (not checked).</summary>
     public static byte[] Png(params (string Type, byte[] Data)[] chunks)
     {
