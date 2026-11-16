@@ -4,6 +4,15 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); versions before 1.0 may change the
 API between minor releases.
 
+## [Unreleased]
+
+### Changed
+
+- The release workflow follows the IOExtend release order: the NuGet packages are pushed before the GitHub release is
+  created (a refused first publication can be fixed and the job re-run, because `--skip-duplicate` makes the push
+  repeatable), and a tag whose version contains a hyphen is published as a prerelease. The changelog section for the
+  version is checked before anything is published.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added
