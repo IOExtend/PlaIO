@@ -8,12 +8,15 @@ API between minor releases.
 
 ### Added
 
-- `PlaDocument.ReadPayload` decodes mode 2 (LZ) payloads. The mode 2 token stream produces exactly the block's declared
-  unpacked size and may reference the decompressed output of any preceding block of the file, so `ReadPayload` for a
-  mode 2 block decodes the file from the start into one global window; the cost of the call grows with the size of the
-  file. Preceding blocks that do not decode (false entries of the scan) are skipped and leave the window unchanged. A
-  stream that does not produce the declared size, or a back-reference beyond the decoded stream, throws
-  `InvalidDataException`.
+- `PlaDocument.ReadPayload` decodes mode 2 (LZ) payloads. A payload may start with a 9-byte stream header holding the
+  packed and/or unpacked size. The token stream produces the block's declared unpacked size and may reference the
+  decompressed output of any preceding block of the file, so `ReadPayload` for a mode 2 block decodes the file from the
+  start into one global window; the cost of the call grows with the size of the file. Preceding blocks that do not
+  decode (false entries of the scan) are skipped and leave the window unchanged. A final match may omit the length byte
+  (the match length is the remainder of the output). Some blocks declare an output buffer larger than the stream
+  produces: the stream simply ends with the body, the produced bytes fill the head of the buffer and the tail stays
+  zero — the global window holds the buffer space, so directory positions keep addressing it. A back-reference beyond
+  the decoded stream throws `InvalidDataException`.
 
 ### Changed
 

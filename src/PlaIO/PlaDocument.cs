@@ -137,17 +137,20 @@ public sealed class PlaDocument : IDisposable
                 }
                 var blockPayload = new byte[block.PackedSize];
                 StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, blockPayload, $"the payload of the block at 0x{block.Offset:x}");
-                // Mode 2 (LZ): the token stream produces exactly the declared unpacked size and may reference the
-                // window; the body tail after the output is complete is writer slack.
+                // Mode 2 (LZ): the token stream produces the declared unpacked size (some blocks declare a buffer
+                // larger than the stream produces — the tail of the buffer stays zero) and may reference the window;
+                // the body tail after the output is complete is writer slack.
                 var output = new byte[block.UnpackedSize];
+                int lzConsumed;
                 try
                 {
-                    consumed = LzPayloadDecoder.Decode(blockPayload, output, window, block.Offset);
+                    lzConsumed = LzPayloadDecoder.Decode(blockPayload, output, window, block.Offset, out _);
                 }
                 catch (InvalidDataException e)
                 {
                     throw new InvalidDataException($"Block at 0x{block.Offset:x}: {e.Message}", e);
                 }
+                consumed = lzConsumed;
                 return output;
             }
             default:
@@ -214,10 +217,13 @@ public sealed class PlaDocument : IDisposable
             window.AddRange(decoded);
             return;
         }
-        // Mode 2 (LZ): the token stream produces exactly the declared unpacked size and the decoder appends
-        // every produced byte to the window; the body tail after the output is complete is writer slack.
+        // Mode 2 (LZ): the token stream produces the declared unpacked size (some blocks declare a buffer
+        // larger than the stream produces — the tail of the buffer stays zero) and the decoder appends every
+        // produced byte to the window; the body tail after the output is complete is writer slack.
         var output = new byte[b.UnpackedSize];
-        LzPayloadDecoder.Decode(payload, output, window, b.Offset);
+        int produced;
+        LzPayloadDecoder.Decode(payload, output, window, b.Offset, out produced);
+        for (long i = produced; i < b.UnpackedSize; i++) window.Add(0); // the directory addresses the buffer space
     }
 
     /// <summary>Searches every raw block large enough for 64 records for an object directory (at most one per block).

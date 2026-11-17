@@ -98,13 +98,70 @@ public class LzPayloadTests
     }
 
     [Fact]
-    public void TruncatedTokenStreamIsRejected()
+    public void AStreamEndingWithTheBodyIsABufferBlockEvenWithoutAStreamHeader()
     {
-        // token 0x40 declares 4 literals; the payload carries only 2
+        // token 0x40 declares 4 literals; the payload carries only 2 and ends: the stream ends with the
+        // body, so the block decodes as a buffer block and the payload holds the declared buffer.
         var lz = Synthetic.Concat([0x40], [0x77, 0x78]);
         using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
             Synthetic.Block(PlaBlockMode.Lz, lz, unpacked: 4))));
 
-        Assert.Throws<InvalidDataException>(() => document.ReadPayload(document.Blocks.Single()));
+        var payload = document.ReadPayload(document.Blocks.Single());
+        Assert.Equal(new byte[] { 0x77, 0x78, 0, 0 }, payload);
+    }
+
+    [Fact]
+    public void StreamHeaderIsSkippedWhenItsSizeFieldMatches()
+    {
+        // [u8][u32 packed][u32 unpacked][token stream]: the u32 at offset 5 equals the declared size,
+        // so the token stream starts after the 9-byte header.
+        var header = Synthetic.Concat([0x47], BitConverter.GetBytes(15u), BitConverter.GetBytes(4u));
+        var lz = Synthetic.Concat(header, [0x40], "ABCD"u8.ToArray(), [0xFF, 0xFE]);
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Lz, lz, unpacked: 4))));
+
+        Assert.Equal("ABCD"u8.ToArray(), document.ReadPayload(document.Blocks.Single()));
+    }
+
+    [Fact]
+    public void FinalMatchWithoutLengthByteClipsToTheDeclaredSize()
+    {
+        // token 0x40 (lit 4) "ABCD"; dist 4 and the body ends: the match length is the remainder
+        // of the output, so the copy fills exactly the declared 8 bytes.
+        var lz = Synthetic.Concat([0x40], "ABCD"u8.ToArray(), [0x00, 0x04]);
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Lz, lz, unpacked: 8))));
+
+        Assert.Equal("ABCDABCD"u8.ToArray(), document.ReadPayload(document.Blocks.Single()));
+    }
+
+    [Fact]
+    public void ABufferBlockProducesItsActualStreamAndZeroTail()
+    {
+        // the token stream produces 4 bytes, but the block declares a 16-byte buffer: the tail of the
+        // buffer stays zero and the payload returns the whole buffer.
+        var lz = Synthetic.Concat([0x40], "ABCD"u8.ToArray());
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Lz, lz, unpacked: 16))));
+
+        var payload = document.ReadPayload(document.Blocks.Single());
+        Assert.Equal(16, payload.Length);
+        Assert.Equal("ABCD"u8.ToArray(), payload[..4]);
+        Assert.Equal(new byte[12], payload[4..]);
+    }
+
+    [Fact]
+    public void TheWindowHoldsTheBufferSpaceOfAPrecedingBufferBlock()
+    {
+        // block A is a buffer block (actual "ABCD", declared 16): the window receives the buffer space
+        // (ABCD + 12 zeros). Block B references the window tail: dist 6 lands in the zero padding.
+        var a = Synthetic.Concat([0x40], "ABCD"u8.ToArray());
+        var b = Synthetic.Concat([0x40], "wxyz"u8.ToArray(), [0x00, 0x06], [0x04]);
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Lz, a, unpacked: 16),
+            Synthetic.Block(PlaBlockMode.Lz, b, unpacked: 8))));
+
+        var payload = document.ReadPayload(document.Blocks[1]);
+        Assert.Equal(new byte[] { (byte)'w', (byte)'x', (byte)'y', (byte)'z', 0, 0, (byte)'w', (byte)'x' }, payload);
     }
 }
