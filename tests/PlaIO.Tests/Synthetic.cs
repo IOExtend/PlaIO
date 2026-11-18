@@ -164,6 +164,35 @@ internal static class Synthetic
     public static byte[] PoolSign() =>
         [0x79, 0xA8, 0xA9, 0x96, 0x45, 0xB4, 0x4A, 0xF3, 0x98, 0x38, 0x33, 0xC3, 0x3A, 0x06, 0x1B, 0x06];
 
+    /// <summary>A BL-tagged subgroup as the pools hold them: tag, id, kind, version, flags (marker 0x8080; GUID flag set
+    /// when <paramref name="guid"/> is given), the GUID, the packed size (u16 for size classes 0..6, u32 for 7..14) and,
+    /// for modes 1 and 2, the u32 unpacked size, then the payload. Mode 1 payloads are zero-mask coded; the declared
+    /// unpacked size may exceed what the stream produces, the tail stays zero. Mode 2 payloads are reported but not
+    /// coded here (the tests only check that the parser reports them with an empty payload).</summary>
+    public static byte[] Subgroup(ushort kind, byte[] payload, PlaBlockMode mode = PlaBlockMode.Raw, Guid? guid = null,
+        uint id = 7, byte version = 1, int unpacked = -1)
+    {
+        int sizeClass = SizeClass.Of((ulong)payload.Length);
+        int modeFlag = mode switch { PlaBlockMode.ZeroMask => 0x100, PlaBlockMode.Lz => 0x200, _ => 0 };
+        ushort flags = (ushort)(0x8080 | sizeClass | (guid != null ? 0x20 : 0) | modeFlag);
+        var bytes = new List<byte>();
+        bytes.AddRange(System.Text.Encoding.ASCII.GetBytes("BL"));
+        bytes.AddRange(Le32(id));
+        bytes.AddRange(Le16(kind));
+        bytes.Add(version);
+        bytes.AddRange(Le16(flags));
+        if (guid != null) bytes.AddRange(guid.Value.ToByteArray());
+        if (sizeClass <= 6) bytes.AddRange(Le16((ushort)payload.Length));
+        else bytes.AddRange(Le32((uint)payload.Length));
+        if (mode != PlaBlockMode.Raw)
+        {
+            uint declared = unpacked >= 0 ? (uint)unpacked : (uint)payload.Length;
+            bytes.AddRange(Le32(declared));
+        }
+        bytes.AddRange(payload);
+        return bytes.ToArray();
+    }
+
     /// <summary>A PNG: the signature and each chunk as [BE length][type][data][CRC]; the CRC is zero (not checked).</summary>
     public static byte[] Png(params (string Type, byte[] Data)[] chunks)
     {

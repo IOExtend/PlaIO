@@ -8,6 +8,15 @@ API between minor releases.
 
 ### Added
 
+- `CompressedPool.ReadSubgroups` and `PoolSubgroup`: the object records the object database keeps inside a pool —
+  BL-tagged subgroups with the object's class id (`Kind`), `Version`, `Flags`, `ObjectId` (a GUID when the header
+  carries one), the payload's storage (`Mode`: raw or zero mask) and the decoded payload (`Data`). The headers follow
+  the file's block layout (a u16 packed size for size classes 0..6, a u32 for 7..14); a zero-mask stream that ends
+  before its declared unpacked size leaves the tail of the buffer zero. Mode 2 (LZ) subgroups have not been met inside
+  the pools examined so far and are reported with an empty payload. The records are found by scanning for the BL tag
+  and accepting the ones whose header parses; a rejected candidate is retried one byte on. Observed payloads store text
+  as a u32 length followed by UTF-16 little-endian data and numbers as little-endian doubles and integers.
+
 - `PlaDocument.FindCompressedPools` and `CompressedPool`: the compressed storage pools of the object database that the
   file holds in the gaps between blocks, each starting with a 16-byte compression sign, a declared decompressed total
   and its blocks (each memcpy or LZ77-triple coded, at most one megabyte and change of packed payload per block). The

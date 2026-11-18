@@ -1,9 +1,9 @@
 # Public API
 
 The `PlaIO` package is the supported surface listed here; every public type is in the namespace `PlaIO`. Everything else
-(the block scanner, the header parser, the payload decoder, the directory search, the pool decoder, the PNG chunk
-walker) is `internal` in `PlaIO.Internal`; it can change in any release and is visible only to the test project through
-`InternalsVisibleTo`.
+(the block scanner, the header parser, the payload decoder, the directory search, the pool decoder, the subgroup parser,
+the PNG chunk walker) is `internal` in `PlaIO.Internal`; it can change in any release and is visible only to the test
+project through `InternalsVisibleTo`.
 
 ## File kind
 
@@ -48,6 +48,14 @@ layout and the LZ77-triple codec follow the format notes of this repository and 
 | `CompressedPool.TotalDecompressed` | The declared size of the decoded pool in bytes. |
 | `CompressedPool.BlockCount` | The number of blocks; at most one megabyte and change of packed payload per block. |
 | `CompressedPool.Decode()` | The decoded bytes: every block memcpy or LZ77-triple decoded, concatenated. The call does not cache. Throws `InvalidDataException` when a block does not decode or the blocks do not add up to the total, and `ObjectDisposedException` when the document is disposed. |
+| `CompressedPool.ReadSubgroups()` | The object records inside the pool: BL-tagged subgroups whose headers parse, with their payloads decoded. Recomputed on each call. A rejected BL candidate is retried one byte on. |
+| `PoolSubgroup.Offset` | Offset of the subgroup header inside the decoded pool. |
+| `PoolSubgroup.Kind` | The object's class id (the kind field of the BL header). |
+| `PoolSubgroup.Version` | The header's version byte, 0 or 1. |
+| `PoolSubgroup.Flags` | The header's flags: the 0x8080 marker, 0x20 marks the GUID, 0x100 and 0x200 select the payload modes, the low 4 bits are the packed size class. |
+| `PoolSubgroup.Mode` | The payload's storage: raw (0) or zero mask (1). Mode 2 (LZ) is reported but not decoded; it has not been met inside the pools examined so far. |
+| `PoolSubgroup.ObjectId` | The object's GUID, present when flag 0x20 is set. |
+| `PoolSubgroup.Data` | The decoded payload; empty for mode 2 subgroups. A zero-mask stream that ends before its declared unpacked size leaves the tail of the buffer zero. Observed payloads store text as a u32 length followed by UTF-16 little-endian data and numbers as little-endian doubles and integers. |
 
 ## BIMx file (`.bimx`)
 
@@ -65,8 +73,8 @@ layout and the LZ77-triple codec follow the format notes of this repository and 
 
 `PlaDocument` and `BimxDocument` never load the whole file into memory: the block index is built by scanning through the
 stream once, at `Open`, and payloads and the cover are read on request. A document is not thread-safe; use one per thread.
-After `Dispose`, `ReadPayload`, `FindDirectories`, `FindCompressedPools`, `CompressedPool.Decode` and `ReadCover` throw
-`ObjectDisposedException`.
+After `Dispose`, `ReadPayload`, `FindDirectories`, `FindCompressedPools`, `CompressedPool.Decode`,
+`CompressedPool.ReadSubgroups` and `ReadCover` throw `ObjectDisposedException`.
 
 ## Diagnostics
 

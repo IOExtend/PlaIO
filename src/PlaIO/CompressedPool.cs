@@ -37,4 +37,11 @@ public sealed class CompressedPool
     /// <see cref="TotalDecompressed"/>.</exception>
     /// <exception cref="ObjectDisposedException">The document is disposed.</exception>
     public byte[] Decode() => _document.DecodePool(Offset);
+
+    /// <summary>Decodes the pool and reads its object records: the BL-tagged subgroups whose headers parse, with their
+    /// payloads decoded (raw or zero mask; mode 2 is reported with an empty payload). Recomputed on each call; a
+    /// rejected BL candidate is retried one byte on, so a short false header can skip over a real record.</summary>
+    /// <exception cref="InvalidDataException">The pool does not decode.</exception>
+    /// <exception cref="ObjectDisposedException">The document is disposed.</exception>
+    public IReadOnlyList<PoolSubgroup> ReadSubgroups() => Internal.SubgroupParser.Parse(Decode());
 }
