@@ -37,8 +37,8 @@ The limits are fixed; the tool has no option to change them.
 | Mode 2 (LZ) payloads | Listed by `blocks`. The CLI `directory` command reads raw blocks only. |
 | Object directories | Searched in raw (mode 0) blocks of at least 1920 bytes, at most one per block. A directory needs at least 64 records whose extents mostly abut. The run that is reported is an estimate and can be shorter than the real directory. |
 
-The meaning of `pos` and `count` in a directory record is not known, class numbers are not mapped to class names and the
-contents of objects are not read, so the tool reports none of them beyond the raw numbers.
+The CLI reports `pos`, `count` and class numbers as stored and does not read object contents. The library exposes
+extent reads through `PlaDocument.OpenStream()`.
 
 ## Output format
 

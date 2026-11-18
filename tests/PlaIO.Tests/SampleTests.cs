@@ -162,7 +162,7 @@ public class SampleTests(SampleCorpus corpus) : IClassFixture<SampleCorpus>
                 {
                     // Records past the unreliable boundary address shifted offsets and are reported by the read; the
                     // exact-fit checks only apply to the records before it.
-                    if (stream.UnreliableFrom is { } from && r.Position + r.Count > (ulong)from)
+                    if (stream.UnreliableFrom is { } from && (r.Position >= (ulong)from || r.Count > (ulong)from - r.Position))
                     {
                         Assert.Throws<InvalidDataException>(() => stream.ReadExtent(r));
                         continue;

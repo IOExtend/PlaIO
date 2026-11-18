@@ -159,25 +159,13 @@ public sealed class PlaDocument : IDisposable
     }
 
     /// <summary>Decodes the whole file once into the global stream: the raw payloads, the full zero-mask decodes and the
-    /// mode-2 outputs, in block order. Blocks that do not decode to their declared size (false entries of the scan) are
-    /// skipped: every stream offset at or past the first skipped block is shifted, and the reads of the stream report
-    /// that. The stream is a snapshot: it holds the whole decoded file in memory and the document may be disposed
-    /// afterwards. Object directory records address the stream by position and count.</summary>
+    /// mode-2 outputs, in block order. If any indexed block fails to decode, the stream rejects reads that reach
+    /// the resulting unreliable range. The stream holds the decoded bytes in memory independently of the document's
+    /// lifetime. Object directory records address the stream by position and count.</summary>
     public PlaStream OpenStream()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        var window = new List<byte>();
-        long? unreliableFrom = null;
-        foreach (var b in _blocks)
-        {
-            if (!TryAppendToWindow(b, window))
-            {
-                // The skipped block contributes no bytes: every offset at or past the position it would have held is
-                // shifted, so reads that reach there are not reliable and report it.
-                unreliableFrom ??= window.Count;
-            }
-        }
-        return new PlaStream(window, unreliableFrom);
+        var window = DecodeGlobalWindow(out var skipped);
+        return new PlaStream(window, skipped.Count == 0 ? null : skipped[0].WindowPosition);
     }
 
     /// <summary>Appends the decoded payload of one block to the mode-2 global window, or leaves the window unchanged when

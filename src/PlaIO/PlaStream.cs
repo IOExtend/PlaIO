@@ -6,15 +6,14 @@ namespace PlaIO;
 /// <see cref="ObjectDirectoryRecord.Position"/> and <see cref="ObjectDirectoryRecord.Count"/> name a byte extent of the
 /// stream, the object's data. The stream is a snapshot: it holds the whole decoded file in memory and never touches the
 /// document again, so the document may be disposed. Not thread-safe.</summary>
-/// <remarks>Blocks of the scan that fail to decode are skipped and leave the stream without their bytes; every offset at
-/// or past the first skipped block is then shifted by the bytes that are missing, and the reads report that: an extent
-/// reaching into the shifted range throws, and <see cref="UnreliableFrom"/> names the boundary.</remarks>
+/// <remarks>When an indexed block fails to decode, offsets at and past that block may be shifted. An extent that
+/// reaches the unreliable range throws, and <see cref="UnreliableFrom"/> names the boundary.</remarks>
 public sealed class PlaStream
 {
     private readonly List<byte> _bytes;
 
-    /// <summary>The stream offset at or past which the offsets are shifted, because blocks failed to decode before it;
-    /// null when every block decoded and all offsets are exact.</summary>
+    /// <summary>The offset of the first indexed block that failed to decode, or null when every indexed block decoded.
+    /// Extent reads that reach this boundary throw because the following offsets may be shifted.</summary>
     public long? UnreliableFrom { get; }
 
     internal PlaStream(List<byte> bytes, long? unreliableFrom)

@@ -201,9 +201,8 @@ included in the repository. Files from other versions are not tested.
 ## Limitations
 
 - Version 0.1.0 is a preview. The API can change before 1.0.
-- The meaning of the `pos` and `count` fields of a directory record is not known, so the addressing of objects is not
-  supported. Class numbers are not mapped to class names, and the contents of objects (elements, parameters, geometry)
-  are not read.
+- `PlaDocument.OpenStream().ReadExtent(record)` reads object bytes for directory records that address the reliable range
+  of the decoded stream. Class names and the contents of objects (elements, parameters, geometry) are not interpreted.
 - Several header and block fields are exposed as raw values because their meaning is not documented.
 - The block index is built by scanning for block headers from offset 32. It is not checked against an index in the file,
   so completeness is not claimed. The scan can also take a byte run for a block header, so the index may contain false

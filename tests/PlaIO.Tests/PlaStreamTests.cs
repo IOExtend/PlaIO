@@ -108,6 +108,20 @@ public class PlaStreamTests
     }
 
     [Fact]
+    public void AShortZeroMaskBlockAtAGroupBoundaryMakesLaterExtentsUnreliable()
+    {
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Raw, "AB"u8.ToArray()),
+            Synthetic.Block(PlaBlockMode.ZeroMask, [1, 9], unpacked: 16),
+            Synthetic.Block(PlaBlockMode.Raw, "CDEFGHIJKLMN"u8.ToArray()))));
+
+        var stream = document.OpenStream();
+        Assert.Equal(2, stream.UnreliableFrom);
+        Assert.Equal("AB"u8.ToArray(), stream.ReadExtent(0, 2));
+        Assert.Throws<InvalidDataException>(() => stream.ReadExtent(new ObjectDirectoryRecord(3, 2, 2, Guid.Empty)));
+    }
+
+    [Fact]
     public void AZeroLengthExtentAtTheUnreliableBoundaryIsStillRejected()
     {
         // A zero-mask block whose stream ends inside a group does not decode; the record after it is shifted.
