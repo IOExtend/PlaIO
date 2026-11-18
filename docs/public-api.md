@@ -23,12 +23,17 @@ The `PlaIO` package is the supported surface listed here; every public type is i
 | `PlaDocument.Blocks` | The block index in file order, found by scanning from offset 32. No on-disk block map is known, so completeness is not claimed. The scan can take a byte run for a block header, so the index may contain false entries. In real files a small share of mode 1 blocks does not decode to its declared size, and `ReadPayload` throws `InvalidDataException` for them. |
 | `PlaDocument.ReadPayload(PlaBlock block)` | The decoded payload of a block of this document. Decodes all three storage modes: raw (mode 0), zero masks (mode 1) and the LZ token stream (mode 2). A mode 2 payload may start with a 9-byte stream header with a 0x46 or 0x47 marker and matching packed and unpacked sizes. The token stream produces the block's declared unpacked size — some blocks declare a buffer larger than the stream produces, the tail of the buffer stays zero — and may reference the output of any preceding block, so the payload is produced by decoding every preceding block of the file in order into one global window; the cost of the call grows with the size of the file. Preceding blocks that do not decode (false entries of the scan) are skipped and leave the window unchanged. Throws `InvalidDataException` when a back-reference reaches beyond the decoded stream or the file is cut short, and `ArgumentException` when the block is not from this document. |
 | `PlaDocument.FindDirectories()` | Searches every raw (mode 0) block large enough for 64 records of 30 bytes for an object directory, at most one per block. Recomputed on each call; mode 1 payloads are not searched. |
+| `PlaDocument.OpenStream()` | The document's decoded global stream (`PlaStream`): every block's payload decoded in block order. Blocks that fail to decode are skipped and mark the remaining offsets as unreliable. The stream holds the decoded bytes in memory and can outlive the document. |
 | `PlaDocument.Dispose()` | Releases the stream unless the document was opened with `leaveOpen`. |
 | `FdbHeader` | `Size` (64), `LayoutVersion` (u16 at offset 8), `FormatVersion` (u16 at offset 10), `Field12` (u32 at offset 12; meaning not documented), `Raw` (the first min(64, file length) bytes; bytes 32..63 overlap the first block). |
 | `PlaBlockMode` | `Raw` (0), `ZeroMask` (1, flag 0x100), `Lz` (2, flag 0x200). |
 | `PlaBlock` | One indexed block: `Offset`, `Tag` (`BL` or `DY`), `Id` and `Kind` (raw), `Version` (0 or 1), `Flags` (raw), `SizeClass` (`Flags & 0xF`), `Mode`, `Guid` (present when flag 0x20 is set), `PackedSize`, `UnpackedSize`, `Extra` (present when flag 0x400 is set; raw), `PayloadOffset`, `HeaderLength`, `End`. |
 | `ObjectDirectory` | A run of directory records inside a raw block: `Block`, `RecordOffset` (payload offset of the first record), `Phase` (`RecordOffset % 30`), `Records`, `AbuttingPairs`, `OverlappingPairs`, `DuplicatePositions`. The run is an estimate and can be shorter than the real directory: it stops after more than 8 consecutive records without an abutting neighbour. |
-| `ObjectDirectoryRecord` | The 30-byte record `[u16 class][u64 pos][u32 count][GUID16]` as `ClassNumber`, `Position`, `Count`, `ObjectId`. The units of position and count are not documented, and the class number is not mapped to a class name. |
+| `ObjectDirectoryRecord` | The 30-byte record `[u16 class][u64 pos][u32 count][GUID16]` as `ClassNumber`, `Position`, `Count`, `ObjectId`. The position and count name a byte extent of the decoded global stream — the object's data (see `PlaDocument.OpenStream`). The class number is not mapped to a class name. |
+| `PlaStream.Length` | Length of the decoded stream in bytes, including the bytes beyond the unreliable boundary. |
+| `PlaStream.UnreliableFrom` | The offset of the first indexed block that failed to decode, or null when every indexed block decoded. |
+| `PlaStream.ReadExtent(long position, long count)` | The bytes of one extent. Throws `ArgumentOutOfRangeException` for negative or out-of-bounds extents and `InvalidDataException` for extents that reach the unreliable range. |
+| `PlaStream.ReadExtent(ObjectDirectoryRecord record)` | The bytes addressed by a directory record. Throws `InvalidDataException` if the extent exceeds the stream or reaches the unreliable range. |
 
 ## BIMx file (`.bimx`)
 
@@ -45,8 +50,9 @@ The `PlaIO` package is the supported surface listed here; every public type is i
 ## Resources and threads
 
 `PlaDocument` and `BimxDocument` never load the whole file into memory: the block index is built by scanning through the
-stream once, at `Open`, and payloads and the cover are read on request. A document is not thread-safe; use one per thread.
-After `Dispose`, `ReadPayload`, `FindDirectories` and `ReadCover` throw `ObjectDisposedException`.
+stream once, at `Open`, and payloads and the cover are read on request. The exception is `OpenStream`: its decoded global
+stream holds the whole decoded file in memory by design. A document is not thread-safe; use one per thread.
+After `Dispose`, `ReadPayload`, `FindDirectories`, `OpenStream` and `ReadCover` throw `ObjectDisposedException`.
 
 ## Diagnostics
 

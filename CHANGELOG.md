@@ -24,6 +24,14 @@ API between minor releases.
   zero — the global window holds the buffer space, so directory positions keep addressing it. A back-reference beyond
   the decoded stream throws `InvalidDataException`.
 
+- `PlaDocument.OpenStream` and `PlaStream`: the decoded global stream of the document (every block's payload decoded in
+  block order) and the extents of it. A directory record's position and count name a byte extent of the stream — the
+  object's data — so `PlaStream.ReadExtent(ObjectDirectoryRecord)` returns an object's bytes; extents can also be read
+  by position and count. The stream is a snapshot that holds the whole decoded file in memory and the document may be
+  disposed afterwards.
+- The position and count of `ObjectDirectoryRecord` are now documented: a byte extent of the decoded global stream,
+  confirmed against the object directories of real files.
+
 ### Changed
 
 - The release workflow follows the IOExtend release order: the NuGet packages are pushed before the GitHub release is

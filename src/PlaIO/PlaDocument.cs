@@ -158,6 +158,16 @@ public sealed class PlaDocument : IDisposable
         }
     }
 
+    /// <summary>Decodes the whole file once into the global stream: the raw payloads, the full zero-mask decodes and the
+    /// mode-2 outputs, in block order. If any indexed block fails to decode, the stream rejects reads that reach
+    /// the resulting unreliable range. The stream holds the decoded bytes in memory independently of the document's
+    /// lifetime. Object directory records address the stream by position and count.</summary>
+    public PlaStream OpenStream()
+    {
+        var window = DecodeGlobalWindow(out var skipped);
+        return new PlaStream(window, skipped.Count == 0 ? null : skipped[0].WindowPosition);
+    }
+
     /// <summary>Appends the decoded payload of one block to the mode-2 global window, or leaves the window unchanged when
     /// the block does not decode to its declared size (a false entry of the scan is not part of the real stream, so a
     /// partial decode is rolled back). Returns whether the block was appended.</summary>
@@ -178,15 +188,17 @@ public sealed class PlaDocument : IDisposable
 
     /// <summary>Decodes the whole file once into the global window: the raw payloads, the full zero-mask decodes and the
     /// mode-2 outputs, in block order. Blocks that do not decode to their declared size (false entries of the scan) are
-    /// skipped and reported in <paramref name="skipped"/>; the window stays as if they were not there.</summary>
-    internal List<byte> DecodeGlobalWindow(out IReadOnlyList<PlaBlock> skipped)
+    /// skipped and reported in <paramref name="skipped"/> with the window offset each would have contributed; the window
+    /// stays as if they were not there.</summary>
+    internal List<byte> DecodeGlobalWindow(out IReadOnlyList<(PlaBlock Block, long WindowPosition)> skipped)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var window = new List<byte>();
-        var failed = new List<PlaBlock>();
+        var failed = new List<(PlaBlock, long)>();
         foreach (var b in _blocks)
         {
-            if (!TryAppendToWindow(b, window)) failed.Add(b);
+            int before = window.Count;
+            if (!TryAppendToWindow(b, window)) failed.Add((b, before));
         }
         skipped = failed.AsReadOnly();
         return window;

@@ -69,4 +69,4 @@ The supported surface is listed in [Public API](public-api.md); every type is in
 
 ## Status
 
-PlaIO 0.1.0 is a preview and the API can change before 1.0. It does not interpret the position and count of directory records, does not map class numbers to class names and does not read object contents. In real files a small share of mode 1 blocks does not decode to its declared size, and `ReadPayload` throws `InvalidDataException` for them. The block index is found by scanning and may contain false entries.
+PlaIO 0.1.0 is a preview and the API can change before 1.0. Use `PlaDocument.OpenStream().ReadExtent(record)` to read object bytes at a directory record's position and count. The stream rejects extents beyond its reliable range. Class names and object contents are not interpreted. In real files a small share of mode 1 blocks does not decode to its declared size, and `ReadPayload` throws `InvalidDataException` for them. The block index is found by scanning and may contain false entries.
