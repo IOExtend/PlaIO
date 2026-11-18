@@ -100,6 +100,7 @@ public class PoolSubgroupTests
         var subgroup = Assert.Single(document.FindCompressedPools()[0].ReadSubgroups());
         Assert.Equal(PlaBlockMode.Lz, subgroup.Mode);
         Assert.Empty(subgroup.Data);
+        Assert.True(subgroup.Partial);
     }
 
     [Fact]

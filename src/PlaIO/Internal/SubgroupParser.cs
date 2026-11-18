@@ -10,7 +10,7 @@ namespace PlaIO.Internal;
 /// found by scanning for the tag and accepting the ones whose header parses; a candidate whose header cannot be read is
 /// retried one byte on, so the scan never stops before the end of the pool. A mode 1 stream that ends exactly at a group
 /// boundary before the declared unpacked size is full leaves the tail of the buffer zero; a stream that ends inside a
-/// group — a truncated literal — is a broken record and is reported by an exception.</summary>
+/// group returns the decoded prefix with zero padding and marks the record as partial.</summary>
 internal static class SubgroupParser
 {
     public static List<PoolSubgroup> Parse(byte[] pool)

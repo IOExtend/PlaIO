@@ -55,6 +55,7 @@ layout and the LZ77-triple codec follow the format notes of this repository and 
 | `PoolSubgroup.Flags` | The header's flags: the 0x8080 marker, 0x20 marks the GUID, 0x100 and 0x200 select the payload modes, the low 4 bits are the packed size class. |
 | `PoolSubgroup.Mode` | The payload's storage: raw (0) or zero mask (1). Mode 2 (LZ) is reported but not decoded; it has not been met inside the pools examined so far. |
 | `PoolSubgroup.ObjectId` | The object's GUID, present when flag 0x20 is set. |
+| `PoolSubgroup.Partial` | True when decoding stopped at a truncated literal or the payload could not be decoded (unsupported mode or size). A zero-mask stream ending at a group boundary has valid zero padding. |
 | `PoolSubgroup.Data` | The decoded payload; empty for mode 2 subgroups. A zero-mask stream that ends before its declared unpacked size leaves the tail of the buffer zero. Observed payloads store text as a u32 length followed by UTF-16 little-endian data and numbers as little-endian doubles and integers. |
 
 ## BIMx file (`.bimx`)

@@ -42,8 +42,8 @@ public sealed class PoolSubgroup
     /// <summary>The decoded payload. For mode 2 subgroups this is empty.</summary>
     public byte[] Data { get; }
 
-    /// <summary>Whether the payload stream ended inside a group — a truncated literal. The decoded <see cref="Data"/> then
-    /// holds the bytes the stream produced and the tail of the buffer is reconstructed with zeros; such a record is
-    /// damaged and its tail must not be trusted.</summary>
+    /// <summary>Whether decoding was incomplete or unavailable. A truncated zero-mask literal leaves a
+    /// zero-filled tail in <see cref="Data"/>. Unsupported mode 2 and payloads too large to decode have empty data.
+    /// A zero-mask stream that ends at a group boundary may have a valid zero-filled tail with this property false.</summary>
     public bool Partial { get; }
 }
