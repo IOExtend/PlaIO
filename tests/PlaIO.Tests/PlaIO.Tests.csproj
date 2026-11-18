@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\PlaIO\PlaIO.csproj" />
+    <!-- The scene adapter is tested here too, like RvtIO.Scene is tested in RvtIO.Tests. -->
+    <ProjectReference Include="..\..\src\PlaIO.Scene\PlaIO.Scene.csproj" />
     <!-- The command line of the tool, compiled here to test it without starting a process. -->
     <Compile Include="..\..\src\PlaIO.Cli\Cli.cs" Link="Cli\Cli.cs" />
     <Compile Include="..\..\src\PlaIO.Cli\DirectoryJson.cs" Link="Cli\DirectoryJson.cs" />

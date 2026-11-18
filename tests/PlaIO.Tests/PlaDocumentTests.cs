@@ -13,14 +13,15 @@ public class PlaDocumentTests
         Synthetic.Block(PlaBlockMode.Lz, new byte[12], tag: "DY", unpacked: 40));
 
     [Fact]
-    public void ReadsModesZeroAndOneAndRefusesModeTwo()
+    public void ReadsAllThreePayloadModes()
     {
         using var document = PlaDocument.Open(new MemoryStream(OneBlockOfEachMode()));
         Assert.Equal([PlaBlockMode.Raw, PlaBlockMode.ZeroMask, PlaBlockMode.Lz], document.Blocks.Select(b => b.Mode));
         Assert.Equal(RawPayload, document.ReadPayload(document.Blocks[0]));
         Assert.Equal(Plain, document.ReadPayload(document.Blocks[1]));
-        var e = Assert.Throws<NotSupportedException>(() => document.ReadPayload(document.Blocks[2]));
-        Assert.Contains("mode 2", e.Message);
+        // The mode-2 payload (12 zero bytes) is a token stream: token 0x00 (no literals),
+        // distance 0 (emit zeros), length byte 0 (256) clipped at the declared size of 40.
+        Assert.Equal(new byte[40], document.ReadPayload(document.Blocks[2]));
     }
 
     [Fact]
