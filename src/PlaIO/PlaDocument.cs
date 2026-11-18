@@ -2,7 +2,7 @@ using PlaIO.Internal;
 
 namespace PlaIO;
 
-/// <summary>An open FDB container (.pla or .pln): the header, the block index and payload decoding for modes 0 and 1.
+/// <summary>An open FDB container (.pla or .pln): the header, the block index and payload decoding for modes 0, 1 and 2.
 /// The file is never loaded whole; payloads are read on request. Not thread-safe.</summary>
 public sealed class PlaDocument : IDisposable
 {
@@ -221,23 +221,14 @@ public sealed class PlaDocument : IDisposable
     /// produced byte. Throws <see cref="InvalidDataException"/> when the block does not decode to its declared size.</summary>
     private void AppendToWindow(PlaBlock b, List<byte> window)
     {
+        if (b.Mode != PlaBlockMode.Lz)
+        {
+            window.AddRange(ReadPayload(b));
+            return;
+        }
+
         var payload = new byte[b.PackedSize];
         StreamReads.ReadExactlyAt(_stream, b.PayloadOffset, payload, $"the payload of the block at 0x{b.Offset:x}");
-        if (b.Mode == PlaBlockMode.Raw)
-        {
-            window.AddRange(payload);
-            return;
-        }
-        if (b.Mode == PlaBlockMode.ZeroMask)
-        {
-            // A mask byte yields at most 8 bytes, so a larger declared size cannot decode; reject it before reading.
-            if ((b.UnpackedSize + 7) / 8 > b.PackedSize)
-                throw new InvalidDataException($"Mode-1 block at 0x{b.Offset:x} declares {b.UnpackedSize} unpacked bytes from {b.PackedSize} packed bytes; a mask byte yields at most 8.");
-            // The payload is streamed and decoded as the bytes arrive: a false entry of the scan fails after the first
-            // chunk instead of reading the whole payload into memory first.
-            PayloadDecoder.DecodeZeroMask(_stream, b.PayloadOffset, b.PackedSize, b.UnpackedSize, window);
-            return;
-        }
         // Mode 2 (LZ): the token stream produces the declared unpacked size (some blocks declare a buffer
         // larger than the stream produces — the tail of the buffer stays zero) and the decoder appends every
         // produced byte to the window; the body tail after the output is complete is writer slack.
