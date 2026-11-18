@@ -206,15 +206,12 @@ public sealed class PlaDocument : IDisposable
         }
         if (b.Mode == PlaBlockMode.ZeroMask)
         {
-            // A mask byte yields at most 8 bytes, so a larger declared size cannot decode; reject it before allocating.
+            // A mask byte yields at most 8 bytes, so a larger declared size cannot decode; reject it before reading.
             if ((b.UnpackedSize + 7) / 8 > b.PackedSize)
                 throw new InvalidDataException($"Mode-1 block at 0x{b.Offset:x} declares {b.UnpackedSize} unpacked bytes from {b.PackedSize} packed bytes; a mask byte yields at most 8.");
-            long needed = Math.Min(b.PackedSize, b.UnpackedSize + (b.UnpackedSize + 7) / 8);
-            var source = new byte[needed];
-            StreamReads.ReadExactlyAt(_stream, b.PayloadOffset, source, $"the payload of the block at 0x{b.Offset:x}");
-            var decoded = new byte[b.UnpackedSize];
-            PayloadDecoder.DecodeZeroMask(source, decoded);
-            window.AddRange(decoded);
+            // The payload is streamed and decoded as the bytes arrive: a false entry of the scan fails after the first
+            // chunk instead of reading the whole payload into memory first.
+            PayloadDecoder.DecodeZeroMask(_stream, b.PayloadOffset, b.PackedSize, b.UnpackedSize, window);
             return;
         }
         // Mode 2 (LZ): the token stream produces the declared unpacked size (some blocks declare a buffer

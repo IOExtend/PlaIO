@@ -47,9 +47,15 @@ internal static class LzPayloadDecoder
         uint declared = (uint)output.Length;
         if (body.Length >= 9)
         {
-            uint field = body[5] | ((uint)body[6] << 8) | ((uint)body[7] << 16) | ((uint)body[8] << 24);
-            if (field == declared || field == (uint)body.Length)
-                src = 9; // stream header [u8][u32][u32] holding the packed and/or unpacked size, the token stream starts after it
+            // The stream header is [u8][u32 body length][u32 unpacked size]: both u32 fields agree with the payload
+            // itself, one with its length and one with the block's declared unpacked size (either order). Requiring
+            // both keeps the four bytes of a literal run inside the stream from being mistaken for a header.
+            uint lengthField = body[1] | ((uint)body[2] << 8) | ((uint)body[3] << 16) | ((uint)body[4] << 24);
+            uint sizeField = body[5] | ((uint)body[6] << 8) | ((uint)body[7] << 16) | ((uint)body[8] << 24);
+            bool structured = lengthField == (uint)body.Length && sizeField == declared
+                || sizeField == (uint)body.Length && lengthField == declared;
+            if (structured)
+                src = 9; // the token stream starts after the header
         }
 
         void RollBack()

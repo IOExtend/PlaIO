@@ -108,8 +108,8 @@ using (var bimx = BimxDocument.Open("model.bimx"))
     File.WriteAllBytes("cover.png", bimx.ReadCover());
 ```
 
-`PlaFile.DetectKind` tells the kinds apart before a file is opened. `ReadPayload` throws `NotSupportedException` for a
-mode 2 (LZ) block and `InvalidDataException` for a payload that does not decode to its declared size. The library never
+`PlaFile.DetectKind` tells the kinds apart before a file is opened. `ReadPayload` throws `InvalidDataException` for a
+payload that does not decode to its declared size. The library never
 writes to the console and has no diagnostic output; problems are reported as exceptions.
 
 See the [public API](docs/public-api.md) for the supported surface and [dependencies](docs/dependencies.md) for package
@@ -202,7 +202,6 @@ included in the repository. Files from other versions are not tested.
 ## Limitations
 
 - Version 0.1.0 is a preview. The API can change before 1.0.
-- Mode 2 (LZ) payloads are recognised but not decoded; `ReadPayload` throws `NotSupportedException` for them.
 - The meaning of the `pos` and `count` fields of a directory record is not known, so the addressing of objects is not
   supported. Class numbers are not mapped to class names, and the contents of objects (elements, parameters, geometry)
   are not read.

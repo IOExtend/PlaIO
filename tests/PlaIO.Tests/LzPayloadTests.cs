@@ -113,10 +113,11 @@ public class LzPayloadTests
     [Fact]
     public void StreamHeaderIsSkippedWhenItsSizeFieldMatches()
     {
-        // [u8][u32 packed][u32 unpacked][token stream]: the u32 at offset 5 equals the declared size,
-        // so the token stream starts after the 9-byte header.
-        var header = Synthetic.Concat([0x47], BitConverter.GetBytes(15u), BitConverter.GetBytes(4u));
-        var lz = Synthetic.Concat(header, [0x40], "ABCD"u8.ToArray(), [0xFF, 0xFE]);
+        // [u8][u32 body length][u32 unpacked][token stream]: the u32 at offset 1 equals the whole payload length and the
+        // u32 at offset 5 equals the declared size, so the token stream starts after the 9-byte header.
+        var tail = Synthetic.Concat([0x40], "ABCD"u8.ToArray(), [0xFF, 0xFE]);
+        var header = Synthetic.Concat([0x47], BitConverter.GetBytes((uint)(9 + tail.Length)), BitConverter.GetBytes(4u));
+        var lz = Synthetic.Concat(header, tail);
         using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
             Synthetic.Block(PlaBlockMode.Lz, lz, unpacked: 4))));
 

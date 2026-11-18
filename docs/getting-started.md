@@ -39,7 +39,6 @@ using (var doc = PlaDocument.Open("project.pln"))
 
     foreach (PlaBlock block in doc.Blocks)
     {
-        if (block.Mode == PlaBlockMode.Lz) continue; // recognised, but ReadPayload throws NotSupportedException
         try
         {
             byte[] payload = doc.ReadPayload(block);
@@ -64,7 +63,7 @@ using (var bimx = BimxDocument.Open("model.bimx"))
 
 Use `PlaFile.DetectKind` to tell an FDB container (`.pla`, `.pln`) from a `.bimx` file before opening it.
 
-The library never writes to the console and has no diagnostic writer. A file it cannot read is reported by an exception: `InvalidDataException` for data that is not the expected kind or is cut short, `NotSupportedException` for a mode 2 payload, and the usual I/O exceptions for a file that cannot be opened.
+The library never writes to the console and has no diagnostic writer. A file it cannot read is reported by an exception: `InvalidDataException` for data that is not the expected kind, does not decode to its declared size, or is cut short, and the usual I/O exceptions for a file that cannot be opened.
 
 The supported surface is listed in [Public API](public-api.md); every type is in the [API reference](api/PlaIO.yml).
 
