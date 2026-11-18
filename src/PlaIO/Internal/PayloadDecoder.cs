@@ -8,10 +8,20 @@ internal static class PayloadDecoder
     /// left after that are allowed.</summary>
     public static int DecodeZeroMask(ReadOnlySpan<byte> src, Span<byte> dst)
     {
-        int consumed = 0, written = 0;
+        int consumed = DecodeZeroMask(src, dst, out int written, out _);
+        if (written != dst.Length) throw Short(consumed, src.Length, written, dst.Length);
+        return consumed;
+    }
+
+    /// <summary>Decodes the available data and reports whether input ended during a literal group.</summary>
+    public static int DecodeZeroMask(ReadOnlySpan<byte> src, Span<byte> dst, out int written, out bool truncatedLiteral)
+    {
+        int consumed = 0;
+        written = 0;
+        truncatedLiteral = false;
         while (written < dst.Length)
         {
-            if (consumed >= src.Length) throw Short(consumed, src.Length, written, dst.Length);
+            if (consumed >= src.Length) break;
             int mask = src[consumed++];
             for (int bit = 0; bit < 8 && written < dst.Length; bit++)
             {
@@ -20,7 +30,11 @@ internal static class PayloadDecoder
                     dst[written++] = 0;
                     continue;
                 }
-                if (consumed >= src.Length) throw Short(consumed, src.Length, written, dst.Length);
+                if (consumed >= src.Length)
+                {
+                    truncatedLiteral = true;
+                    return consumed;
+                }
                 dst[written++] = src[consumed++];
             }
         }

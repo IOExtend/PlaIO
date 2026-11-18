@@ -11,6 +11,8 @@ API between minor releases.
 - `PlaDocument.FindCompressedPools()` finds pools outside indexed block payloads. `CompressedPool.Decode()` reads
   stored and QuickLZ level 1 frames using the public format description and saved-file verification.
 
+- `CompressedPool.ReadSubgroups()` reads BL-tagged records from decoded pools and reports incomplete payloads.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added

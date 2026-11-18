@@ -32,4 +32,9 @@ public sealed class CompressedPool
     /// <exception cref="InvalidDataException">The pool is malformed or a frame fails to decode.</exception>
     /// <exception cref="ObjectDisposedException">The owning document is disposed.</exception>
     public byte[] Decode() => _document.DecodePool(Offset);
+
+    /// <summary>Decodes the pool and reads BL-tagged records in pool order.</summary>
+    /// <exception cref="InvalidDataException">The pool does not decode.</exception>
+    /// <exception cref="ObjectDisposedException">The owning document is disposed.</exception>
+    public IReadOnlyList<PoolSubgroup> ReadSubgroups() => PoolSubgroupReader.Read(Decode());
 }
