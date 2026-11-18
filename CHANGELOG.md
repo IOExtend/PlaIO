@@ -8,6 +8,12 @@ API between minor releases.
 
 ### Added
 
+- The `PlaIO.Scene` adapter project (namespace `PlaIO.Scene`): `PlaSceneReader.Read(path)` turns a `.pla` or `.pln`
+  container into an `IOScene` `SceneDocument` — one model per file with the frozen `Key` derivation (the
+  `PlaSceneOptions.ModelKey`, else the file name), no elements yet (the container reader does not decode element
+  contents), and the `container-only` diagnostic. The project is `IsPackable=false` and is not published; it ships on a
+  `PlaIO` release tag when the reader decodes elements and geometry. See `docs/scene.md`.
+
 - `PlaDocument.ReadPayload` decodes mode 2 (LZ) payloads. A payload may start with a 9-byte stream header with a
   0x46 or 0x47 marker and matching packed and unpacked sizes. The token stream produces the block's declared unpacked size and may reference the
   decompressed output of any preceding block of the file, so `ReadPayload` for a mode 2 block decodes the file from the
@@ -18,13 +24,6 @@ API between minor releases.
   zero — the global window holds the buffer space, so directory positions keep addressing it. A back-reference beyond
   the decoded stream throws `InvalidDataException`.
 
-### Changed
-
-- `PlaDocument.ReadPayload` no longer throws `NotSupportedException` for mode 2 blocks: all three storage modes
-  (raw, zero mask, LZ) decode now.
-
-### Added
-
 - `PlaDocument.OpenStream` and `PlaStream`: the decoded global stream of the document (every block's payload decoded in
   block order) and the extents of it. A directory record's position and count name a byte extent of the stream — the
   object's data — so `PlaStream.ReadExtent(ObjectDirectoryRecord)` returns an object's bytes; extents can also be read
@@ -32,6 +31,16 @@ API between minor releases.
   disposed afterwards.
 - The position and count of `ObjectDirectoryRecord` are now documented: a byte extent of the decoded global stream,
   confirmed against the object directories of real files.
+
+### Changed
+
+- The release workflow follows the IOExtend release order: the NuGet packages are pushed before the GitHub release is
+  created (a refused first publication can be fixed and the job re-run, because `--skip-duplicate` makes the push
+  repeatable), and a tag whose version contains a hyphen is published as a prerelease. The changelog section for the
+  version is checked before anything is published.
+
+- `PlaDocument.ReadPayload` no longer throws `NotSupportedException` for mode 2 blocks: all three storage modes
+  (raw, zero mask, LZ) decode now.
 
 ## [0.1.0] - 2026-11-12
 
