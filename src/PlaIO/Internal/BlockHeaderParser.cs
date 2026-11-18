@@ -8,7 +8,7 @@ internal static class BlockHeaderParser
     /// <summary>Parses a block header that starts at <paramref name="at"/>[0], found at file offset <paramref name="offset"/>.
     /// The span may end before a full header near the end of the file. Returns false at the first rule that fails; never
     /// throws.</summary>
-    public static bool TryParse(ReadOnlySpan<byte> at, long offset, long fileLength, [NotNullWhen(true)] out PlaBlock? block)
+    public static bool TryParse(ReadOnlySpan<byte> at, long offset, long fileLength, [NotNullWhen(true)] out PlaBlock? block, bool poolSubgroup = false)
     {
         block = null;
         if (at.Length < 11) return false;
@@ -39,7 +39,7 @@ internal static class BlockHeaderParser
         };
         p += width;
         if (packed > long.MaxValue) return false;
-        if (SizeClass.Of(packed) != sizeClass) return false;
+        if (!poolSubgroup && SizeClass.Of(packed) != sizeClass) return false;
 
         var mode = (flags & FdbFormat.FlagZeroMask) != 0 ? PlaBlockMode.ZeroMask
             : (flags & FdbFormat.FlagLz) != 0 ? PlaBlockMode.Lz
@@ -53,7 +53,8 @@ internal static class BlockHeaderParser
         }
 
         uint? extra = null;
-        if ((flags & FdbFormat.FlagExtra) != 0)
+        // Pool subgroups use the file header's size widths but have no separate extra field.
+        if (!poolSubgroup && (flags & FdbFormat.FlagExtra) != 0)
         {
             if (at.Length < p + 4) return false;
             extra = BinaryPrimitives.ReadUInt32LittleEndian(at[p..]);

@@ -49,6 +49,19 @@ independent decoding of saved-file frames verified the correspondence. PlaIO has
 | `CompressedPool.TotalDecompressed` and `BlockCount` | Decoded byte count and number of frames in the pool. |
 | `CompressedPool.Decode()` | Decoded frame payloads in order. Throws `InvalidDataException` on invalid framing or data and `ObjectDisposedException` after disposing the document. |
 
+### Pool subgroups
+
+The subgroup header uses the FDB size field widths and may carry a GUID. It does not contain the file-level extra field.
+Offsets are relative to the decoded pool. The scanner retries an unmatched BL candidate at the next byte.
+
+| Member | Use |
+|---|---|
+| `CompressedPool.ReadSubgroups()` | Decodes the pool and returns the recognised BL-tagged records in pool order. |
+| `PoolSubgroup.Offset` | Start of the subgroup header in the decoded pool. |
+| `PoolSubgroup.Kind`, `Version`, `Flags` and `ObjectId` | Raw header metadata and the optional GUID. |
+| `PoolSubgroup.Mode` and `Data` | Raw or zero-mask payload bytes. Mode 2 is reported with empty data. |
+| `PoolSubgroup.Partial` | True for unavailable mode 2 data or an incomplete zero-mask literal. A zero-mask stream ending at a group boundary can leave valid zero padding. |
+
 ## BIMx file (`.bimx`)
 
 | Member | Use |

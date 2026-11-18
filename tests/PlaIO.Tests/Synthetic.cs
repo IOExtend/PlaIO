@@ -152,4 +152,44 @@ internal static class Synthetic
     private static byte[] Le32(uint v) { var b = new byte[4]; BinaryPrimitives.WriteUInt32LittleEndian(b, v); return b; }
 
     private static byte[] Le64(ulong v) { var b = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(b, v); return b; }
+
+    private static ReadOnlySpan<byte> PoolMarker =>
+        [0x79, 0xA8, 0xA9, 0x96, 0x45, 0xB4, 0x4A, 0xF3, 0x98, 0x38, 0x33, 0xC3, 0x3A, 0x06, 0x1B, 0x06];
+
+    public static byte[] QuickLzPool(params (uint Size, byte[] Frame)[] frames)
+    {
+        byte[] header = new byte[32];
+        PoolMarker.CopyTo(header);
+        BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(16), (ulong)frames.Sum(f => (long)f.Size));
+        BinaryPrimitives.WriteUInt64LittleEndian(header.AsSpan(24), (ulong)frames.Length);
+        using var result = new MemoryStream();
+        result.Write(header);
+        Span<byte> size = stackalloc byte[4];
+        foreach (var (_, frame) in frames)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(size, (uint)frame.Length);
+            result.Write(size);
+            result.Write(frame);
+        }
+        return result.ToArray();
+    }
+
+    public static byte[] QuickLzFrame(byte[] body, int size, byte flags)
+    {
+        int header = (flags & 2) == 0 ? 3 : 9;
+        byte[] frame = new byte[header + body.Length];
+        frame[0] = flags;
+        if (header == 3)
+        {
+            frame[1] = checked((byte)frame.Length);
+            frame[2] = checked((byte)size);
+        }
+        else
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(1), (uint)frame.Length);
+            BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(5), (uint)size);
+        }
+        body.CopyTo(frame, header);
+        return frame;
+    }
 }
