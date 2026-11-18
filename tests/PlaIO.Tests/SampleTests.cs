@@ -143,7 +143,7 @@ public class SampleTests(SampleCorpus corpus) : IClassFixture<SampleCorpus>
         {
             sample.Document.DecodeGlobalWindow(out var skipped);
             string where = $"{sample.Name}: {skipped.Count} of {sample.Document.Blocks.Count} blocks skipped";
-            Assert.True(skipped.All(b => b.Mode != PlaBlockMode.Lz), $"{where}; a mode-2 block did not decode");
+            Assert.True(skipped.All(s => s.Block.Mode != PlaBlockMode.Lz), $"{where}; a mode-2 block did not decode");
             Assert.True(skipped.Count <= 0.01 * sample.Document.Blocks.Count, where);
         }
     }
@@ -160,6 +160,13 @@ public class SampleTests(SampleCorpus corpus) : IClassFixture<SampleCorpus>
                 int checkedReads = 0;
                 foreach (var r in d.Records)
                 {
+                    // Records past the unreliable boundary address shifted offsets and are reported by the read; the
+                    // exact-fit checks only apply to the records before it.
+                    if (stream.UnreliableFrom is { } from && r.Position + r.Count > (ulong)from)
+                    {
+                        Assert.Throws<InvalidDataException>(() => stream.ReadExtent(r));
+                        continue;
+                    }
                     Assert.True(r.Position <= (ulong)stream.Length && r.Count <= (ulong)stream.Length - r.Position,
                         $"{where}: record {r.ObjectId} (class {r.ClassNumber}) addresses {r.Position}+{r.Count} of a {stream.Length}-byte stream");
                     // A few full reads exercise the copy, not every record (the streams are large).

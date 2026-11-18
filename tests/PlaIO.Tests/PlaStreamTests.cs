@@ -70,4 +70,52 @@ public class PlaStreamTests
             stream.ReadExtent(new ObjectDirectoryRecord(3, 1, 10, guid)));
         Assert.Contains(guid.ToString(), e.Message);
     }
+
+    [Fact]
+    public void ARecordPositionWiderThanALongIsRejectedAsPastTheStream()
+    {
+        var guid = Guid.NewGuid();
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Raw, "AB"u8.ToArray()))));
+
+        var stream = document.OpenStream();
+        var e = Assert.Throws<InvalidDataException>(() =>
+            stream.ReadExtent(new ObjectDirectoryRecord(3, ulong.MaxValue, 1, guid)));
+        Assert.Contains(guid.ToString(), e.Message);
+    }
+
+    [Fact]
+    public void ExtentsPastASkippedBlockAreRejectedAsShifted()
+    {
+        // Block A: raw "AB". Block B: a mode 2 block that does not decode (its match distance reaches past the decoded
+        // stream, in both the strict and the buffer-mode attempt). Block C: raw "CD", its bytes are shifted in the
+        // stream by the skipped block.
+        var brokenLz = Synthetic.Concat([0x40], "ABCD"u8.ToArray(), [0xFF, 0xFF], [0x10]);
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Raw, "AB"u8.ToArray()),
+            Synthetic.Block(PlaBlockMode.Lz, brokenLz, unpacked: 6),
+            Synthetic.Block(PlaBlockMode.Raw, "CD"u8.ToArray()))));
+
+        var stream = document.OpenStream();
+        Assert.NotNull(stream.UnreliableFrom);
+        Assert.Equal(2, stream.UnreliableFrom);
+        // Before the boundary the reads are exact.
+        Assert.Equal("AB"u8.ToArray(), stream.ReadExtent(0, 2));
+        // At and past the boundary the offsets are shifted: a read of the following record reports it.
+        var e = Assert.Throws<InvalidDataException>(() => stream.ReadExtent(2, 2));
+        Assert.Contains("shifted", e.Message);
+        Assert.Throws<InvalidDataException>(() => stream.ReadExtent(new ObjectDirectoryRecord(3, 2, 2, Guid.NewGuid())));
+    }
+
+    [Fact]
+    public void AZeroLengthExtentAtTheUnreliableBoundaryIsStillRejected()
+    {
+        // A zero-mask block whose stream ends inside a group does not decode; the record after it is shifted.
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Raw, "AB"u8.ToArray()),
+            Synthetic.Block(PlaBlockMode.ZeroMask, [0x80], unpacked: 8))));
+        var stream = document.OpenStream();
+        Assert.Equal(2, stream.UnreliableFrom);
+        Assert.Throws<InvalidDataException>(() => stream.ReadExtent(2, 0));
+    }
 }

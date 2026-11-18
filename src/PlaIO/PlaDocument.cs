@@ -160,12 +160,24 @@ public sealed class PlaDocument : IDisposable
 
     /// <summary>Decodes the whole file once into the global stream: the raw payloads, the full zero-mask decodes and the
     /// mode-2 outputs, in block order. Blocks that do not decode to their declared size (false entries of the scan) are
-    /// skipped. The stream is a snapshot: it holds the whole decoded file in memory and the document may be disposed
+    /// skipped: every stream offset at or past the first skipped block is shifted, and the reads of the stream report
+    /// that. The stream is a snapshot: it holds the whole decoded file in memory and the document may be disposed
     /// afterwards. Object directory records address the stream by position and count.</summary>
     public PlaStream OpenStream()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return new PlaStream(DecodeGlobalWindow(out _));
+        var window = new List<byte>();
+        long? unreliableFrom = null;
+        foreach (var b in _blocks)
+        {
+            if (!TryAppendToWindow(b, window))
+            {
+                // The skipped block contributes no bytes: every offset at or past the position it would have held is
+                // shifted, so reads that reach there are not reliable and report it.
+                unreliableFrom ??= window.Count;
+            }
+        }
+        return new PlaStream(window, unreliableFrom);
     }
 
     /// <summary>Appends the decoded payload of one block to the mode-2 global window, or leaves the window unchanged when
@@ -188,15 +200,17 @@ public sealed class PlaDocument : IDisposable
 
     /// <summary>Decodes the whole file once into the global window: the raw payloads, the full zero-mask decodes and the
     /// mode-2 outputs, in block order. Blocks that do not decode to their declared size (false entries of the scan) are
-    /// skipped and reported in <paramref name="skipped"/>; the window stays as if they were not there.</summary>
-    internal List<byte> DecodeGlobalWindow(out IReadOnlyList<PlaBlock> skipped)
+    /// skipped and reported in <paramref name="skipped"/> with the window offset each would have contributed; the window
+    /// stays as if they were not there.</summary>
+    internal List<byte> DecodeGlobalWindow(out IReadOnlyList<(PlaBlock Block, long WindowPosition)> skipped)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var window = new List<byte>();
-        var failed = new List<PlaBlock>();
+        var failed = new List<(PlaBlock, long)>();
         foreach (var b in _blocks)
         {
-            if (!TryAppendToWindow(b, window)) failed.Add(b);
+            int before = window.Count;
+            if (!TryAppendToWindow(b, window)) failed.Add((b, before));
         }
         skipped = failed.AsReadOnly();
         return window;
