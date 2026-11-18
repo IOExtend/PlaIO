@@ -1,8 +1,9 @@
 # Public API
 
 The `PlaIO` package is the supported surface listed here; every public type is in the namespace `PlaIO`. Everything else
-(the block scanner, the header parser, the payload decoder, the directory search, the PNG chunk walker) is `internal` in
-`PlaIO.Internal`; it can change in any release and is visible only to the test project through `InternalsVisibleTo`.
+(the block scanner, the header parser, the payload decoder, the directory search, the pool decoder, the PNG chunk
+walker) is `internal` in `PlaIO.Internal`; it can change in any release and is visible only to the test project through
+`InternalsVisibleTo`.
 
 ## File kind
 
@@ -30,6 +31,24 @@ The `PlaIO` package is the supported surface listed here; every public type is i
 | `ObjectDirectory` | A run of directory records inside a raw block: `Block`, `RecordOffset` (payload offset of the first record), `Phase` (`RecordOffset % 30`), `Records`, `AbuttingPairs`, `OverlappingPairs`, `DuplicatePositions`. The run is an estimate and can be shorter than the real directory: it stops after more than 8 consecutive records without an abutting neighbour. |
 | `ObjectDirectoryRecord` | The 30-byte record `[u16 class][u64 pos][u32 count][GUID16]` as `ClassNumber`, `Position`, `Count`, `ObjectId`. The units of position and count are not documented, and the class number is not mapped to a class name. |
 
+## Compressed pools (the object database)
+
+The object database keeps its groups, journals and library data in compressed pools that sit in the gaps between blocks.
+A pool starts with a 16-byte compression sign, then the declared decompressed total and the block count (both unsigned
+64-bit little endian), then that many blocks, each a u32 compressed size followed by the block: a flag byte (bit 0: the
+payload is LZ77-triple coded, otherwise copied; bit 1: the sizes are 32-bit, otherwise single bytes), the packed size
+(equal to the compressed size), the unpacked size and the payload. The blocks decode to exactly the declared total. The
+layout and the LZ77-triple codec were recovered from ObjectDatabase.dll.
+
+| Member | Use |
+|---|---|
+| `PlaDocument.FindCompressedPools()` | Every pool whose header and block headers parse and whose declared sizes tile the total inside the file, in file order. Recomputed on each call; the scan reads the file in windows and then the block headers of each candidate sign. |
+| `CompressedPool.Offset` | File offset of the pool's compression sign. |
+| `CompressedPool.End` | File offset past the last block of the pool. |
+| `CompressedPool.TotalDecompressed` | The declared size of the decoded pool in bytes. |
+| `CompressedPool.BlockCount` | The number of blocks; at most one megabyte and change of packed payload per block. |
+| `CompressedPool.Decode()` | The decoded bytes: every block memcpy or LZ77-triple decoded, concatenated. The call does not cache. Throws `InvalidDataException` when a block does not decode or the blocks do not add up to the total, and `ObjectDisposedException` when the document is disposed. |
+
 ## BIMx file (`.bimx`)
 
 | Member | Use |
@@ -46,7 +65,8 @@ The `PlaIO` package is the supported surface listed here; every public type is i
 
 `PlaDocument` and `BimxDocument` never load the whole file into memory: the block index is built by scanning through the
 stream once, at `Open`, and payloads and the cover are read on request. A document is not thread-safe; use one per thread.
-After `Dispose`, `ReadPayload`, `FindDirectories` and `ReadCover` throw `ObjectDisposedException`.
+After `Dispose`, `ReadPayload`, `FindDirectories`, `FindCompressedPools`, `CompressedPool.Decode` and `ReadCover` throw
+`ObjectDisposedException`.
 
 ## Diagnostics
 

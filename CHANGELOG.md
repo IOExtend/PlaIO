@@ -4,6 +4,19 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); versions before 1.0 may change the
 API between minor releases.
 
+## [Unreleased]
+
+### Added
+
+- `PlaDocument.FindCompressedPools` and `CompressedPool`: the compressed storage pools of the object database that the
+  file holds in the gaps between blocks, each starting with a 16-byte compression sign, a declared decompressed total
+  and its blocks (each memcpy or LZ77-triple coded, at most one megabyte and change of packed payload per block). The
+  object database keeps its groups, journals and library data in these pools; a pool is not a block and does not take
+  part in the block index. `FindCompressedPools` finds every pool whose header and block headers parse and whose
+  declared sizes tile the total inside the file (computed on each call; the scan reads the file in windows); `Decode`
+  produces the decoded bytes on request. The layout and the LZ77-triple codec were recovered from ObjectDatabase.dll
+  (the `AppendDecompressedDataAfterCompressionSign` reader, the block decompressor and its core).
+
 ## [0.1.0] - 2026-11-12
 
 ### Added

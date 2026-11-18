@@ -125,6 +125,45 @@ internal static class Synthetic
     /// <summary>A container: the 32-byte header, then the parts from offset 32.</summary>
     public static byte[] Fdb(params byte[][] parts) => Header().Concat(parts.SelectMany(p => p)).ToArray();
 
+    /// <summary>A compressed storage pool: the compression sign, the u64 total and block count, then one u32 compressed
+    /// size plus block per payload. Big memcpy blocks (flag 0x46) unless <paramref name="small"/>; a small block (flag
+    /// 0x44) keeps its sizes in single bytes and needs at most 252 payload bytes. The big-block flag's other bits match
+    /// the real files (0x44/0x46/0x47 with bit 2 and bit 6 set).</summary>
+    public static byte[] Pool(byte[][] payloads, bool small = false)
+    {
+        var body = new List<byte>();
+        ulong total = 0;
+        foreach (var payload in payloads)
+        {
+            int headerLength = small ? 3 : 9;
+            var block = new byte[headerLength + payload.Length];
+            block[0] = (byte)(small ? 0x44 : 0x46); // bit 0 clear: memcpy; bit 2 and 6 set like the real files
+            if (small)
+            {
+                block[1] = (byte)block.Length;
+                block[2] = (byte)payload.Length;
+            }
+            else
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(1), (uint)block.Length);
+                BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(5), (uint)payload.Length);
+            }
+            payload.CopyTo(block, headerLength);
+            body.AddRange(Le32((uint)block.Length));
+            body.AddRange(block);
+            total += (ulong)payload.Length;
+        }
+        var head = new byte[32];
+        PoolSign().CopyTo(head);
+        BinaryPrimitives.WriteUInt64LittleEndian(head.AsSpan(16), total);
+        BinaryPrimitives.WriteUInt64LittleEndian(head.AsSpan(24), (ulong)payloads.Length);
+        return head.Concat(body).ToArray();
+    }
+
+    /// <summary>The compression sign the pools start with.</summary>
+    public static byte[] PoolSign() =>
+        [0x79, 0xA8, 0xA9, 0x96, 0x45, 0xB4, 0x4A, 0xF3, 0x98, 0x38, 0x33, 0xC3, 0x3A, 0x06, 0x1B, 0x06];
+
     /// <summary>A PNG: the signature and each chunk as [BE length][type][data][CRC]; the CRC is zero (not checked).</summary>
     public static byte[] Png(params (string Type, byte[] Data)[] chunks)
     {
