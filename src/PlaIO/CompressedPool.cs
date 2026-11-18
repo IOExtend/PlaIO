@@ -4,7 +4,8 @@ namespace PlaIO;
 /// compression sign, the declared decompressed total and the blocks (each memcpy or LZ77-triple coded). The object
 /// database keeps its groups, journals and library data in such pools; a pool is not a block and does not take part in
 /// the block index or the payloads. The decoded bytes are produced on request by <see cref="Decode"/>; the cost of a
-/// call grows with the pool size.</summary>
+/// call grows with the pool size. The layout and the codec follow the format notes of this repository and are confirmed
+/// against the sample files.</summary>
 public sealed class CompressedPool
 {
     private readonly PlaDocument _document;

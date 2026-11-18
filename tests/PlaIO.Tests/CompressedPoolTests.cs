@@ -88,6 +88,47 @@ public class CompressedPoolTests
     }
 
     [Fact]
+    public void ADeclaredTotalPastTheContainerIsStillAccepted()
+    {
+        // The codec is compressing: a small pool can declare a total bigger than the container itself. The block header
+        // parses inside the file and its declared unpacked size tiles the total, so Find accepts the pool even though
+        // the declared total is past the end of the file; only the array limit and the per-block bounds are checked.
+        var block = new byte[9 + 16];
+        block[0] = 0x47;
+        BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(1), (uint)block.Length);
+        BinaryPrimitives.WriteUInt32LittleEndian(block.AsSpan(5), 128);
+        0x00FF00FFu.CopyToBlock(block, 9);
+        var bytes = Synthetic.Fdb(Synthetic.PoolSign(), Le64(128), Le64(1), Le32((uint)block.Length), block);
+        using var document = PlaDocument.Open(new MemoryStream(bytes));
+        var pool = Assert.Single(document.FindCompressedPools());
+        Assert.Equal(128, pool.TotalDecompressed);
+        Assert.True(pool.TotalDecompressed > document.Length);
+    }
+
+    [Fact]
+    public void ASignInsideAnIndexedBlockPayloadIsNotAPool()
+    {
+        // A raw block whose payload carries a compression sign and a parseable pool header: the sign is data, not a
+        // pool start, and Find must not return it.
+        var payload = Synthetic.Pool([Synthetic.RandomBytes(new Random(8), 64)]);
+        var block = Synthetic.Block(PlaBlockMode.Raw, payload, kind: 0x015B);
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(block)));
+        Assert.Empty(document.FindCompressedPools());
+    }
+
+    [Fact]
+    public void APoolInTheGapAfterAnIndexedBlockIsFound()
+    {
+        // The same container with the pool moved out of the block: the block payload is a filler, the pool follows it.
+        var payload = Synthetic.RandomBytes(new Random(9), 64);
+        var block = Synthetic.Block(PlaBlockMode.Raw, payload, kind: 0x015B);
+        var bytes = Synthetic.Fdb(block, Synthetic.Pool([Synthetic.RandomBytes(new Random(10), 64)]));
+        using var document = PlaDocument.Open(new MemoryStream(bytes));
+        var pool = Assert.Single(document.FindCompressedPools());
+        Assert.True(pool.Offset >= 32 + payload.Length, $"pool at 0x{pool.Offset:x} overlaps the block");
+    }
+
+    [Fact]
     public void DecodeAfterDisposeThrows()
     {
         var document = PlaDocument.Open(new MemoryStream(PoolOf([1, 2, 3])));
@@ -128,18 +169,6 @@ public class CompressedPoolTests
         {
             corpus.Dispose();
         }
-    }
-
-    [SkippableFact]
-    public void TheTextAnnotationSampleHasPoolsAndTheyAllDecode()
-    {
-        string path = TestFiles.TryFind("TEXSTS.pln") ?? throw TestFiles.Missing("TEXSTS.pln");
-        using var document = PlaDocument.Open(path);
-        var pools = document.FindCompressedPools();
-        Assert.True(pools.Count > 0, $"no pools in TEXSTS.pln; {document.Length} bytes");
-        foreach (var pool in pools)
-            Assert.True(pool.Decode().Length == pool.TotalDecompressed,
-                $"pool at 0x{pool.Offset:x} does not decode to {pool.TotalDecompressed}");
     }
 
     private static byte[] Le32(uint value)

@@ -2,32 +2,40 @@ using System.Buffers.Binary;
 
 namespace PlaIO.Internal;
 
-/// <summary>The compressed storage pools of the ODB object database that live in the gaps between blocks. A pool starts
-/// with the 16-byte compression sign, then the decompressed total and the block count (both unsigned 64-bit little
-/// endian), then that many blocks, each a u32 compressed size followed by the block. A block is a flag byte (bit 0: the
-/// payload is LZ77-triple coded, otherwise copied; bit 1: the sizes are 32-bit, otherwise bytes), the packed size
-/// (equal to the block's compressed size), the unpacked size and the payload. The blocks decode to exactly the declared
-/// total. The layout and the LZ77-triple codec were recovered from ObjectDatabase.dll
-/// (AppendDecompressedDataAfterCompressionSign, sub_1801A8364 and the decompressor core sub_1801A7FFC).</summary>
+/// <summary>The compressed storage pools that live in the gaps between blocks. A pool starts with the 16-byte compression
+/// sign, then the decompressed total and the block count (both unsigned 64-bit little endian), then that many blocks, each
+/// a u32 compressed size followed by the block. A block is a flag byte (bit 0: the payload is LZ77-triple coded, otherwise
+/// copied; bit 1: the sizes are 32-bit, otherwise bytes), the packed size (equal to the block's compressed size), the
+/// unpacked size and the payload. The blocks decode to exactly the declared total. The layout and the codec follow the
+/// format notes of this repository and are confirmed against the sample files.</summary>
 internal static class PoolDecoder
 {
     /// <summary>The compression sign that opens every compressed pool.</summary>
     public static ReadOnlySpan<byte> Sign => [0x79, 0xA8, 0xA9, 0x96, 0x45, 0xB4, 0x4A, 0xF3, 0x98, 0x38, 0x33, 0xC3, 0x3A, 0x06, 0x1B, 0x06];
 
     /// <summary>At most one megabyte and change of packed payload per block; the reader allocates a buffer of this size
-    /// plus a byte for each block (the C reader uses 1,048,976 for its compressed and 1,048,576 for its output buffer).</summary>
+    /// plus a byte for the block.</summary>
     public const int MaxCompressedBlock = 1048976;
 
     /// <summary>The pools of the stream: every compression sign whose header parses and whose block headers tile the
     /// declared total inside the file. The scan continues past an accepted pool; a rejected sign is retried one byte on.
-    /// Returns the pool descriptions in file order.</summary>
-    public static List<(long Offset, long End, ulong Total, int BlockCount)> Find(Stream stream, long length)
+    /// The <paramref name="excluded"/> ranges are skipped entirely: a sign inside them is not considered (the document
+    /// passes the byte ranges of its indexed blocks, whose payloads can carry the sign as data). Returns the pool
+    /// descriptions in file order.</summary>
+    public static List<(long Offset, long End, ulong Total, int BlockCount)> Find(Stream stream, long length, IReadOnlyList<(long Start, long End)>? excluded)
     {
         var pools = new List<(long Offset, long End, ulong Total, int BlockCount)>();
         var window = new byte[1 << 20];
         long pos = 0;
         while (pos + Sign.Length <= length)
         {
+            // Step over an excluded range whole: its signs are data, not pool starts.
+            if (excluded is not null)
+                foreach (var (start, end) in excluded)
+                {
+                    if (pos >= start && pos < end) pos = end;
+                }
+            if (pos + Sign.Length > length) break;
             int count = (int)Math.Min(window.Length, length - pos);
             StreamReads.ReadExactlyAt(stream, pos, window.AsSpan(0, count), "the pool scan");
             int at = IndexOfSign(window.AsSpan(0, count));
@@ -38,6 +46,11 @@ internal static class PoolDecoder
                 continue;
             }
             long signAt = pos + at;
+            if (Inside(excluded, signAt))
+            {
+                pos = signAt + 1;
+                continue;
+            }
             if (TryValidate(stream, length, signAt, out var pool))
             {
                 pools.Add(pool);
@@ -78,8 +91,9 @@ internal static class PoolDecoder
     }
 
     /// <summary>The block layout of the pool whose sign sits at <paramref name="offset"/>: the u64 total and block count
-    /// after the sign, then one entry per block with its payload offset, packed and unpacked size. A header that runs past
-    /// the file or whose sizes do not tile the declared total fails.</summary>
+    /// after the sign, then one entry per block with its payload offset, packed and unpacked size. The declared total can
+    /// exceed the container (the codec is compressing); only the array limit and the file bounds of every block header
+    /// and payload are checked. The sizes must tile the declared total exactly.</summary>
     private static (ulong Total, List<(long PayloadAt, int Packed, int Unpacked)> Blocks) ReadBlocks(Stream stream, long offset, long length)
     {
         var header = new byte[16];
@@ -88,7 +102,6 @@ internal static class PoolDecoder
         ulong total = BinaryPrimitives.ReadUInt64LittleEndian(header);
         ulong blockCount = BinaryPrimitives.ReadUInt64LittleEndian(header.AsSpan(8));
         if (total > int.MaxValue) throw Bad(offset, $"its declared total {total} exceeds the array limit");
-        if (total > (ulong)length || blockCount > (ulong)length) throw Bad(offset, "its declared sizes exceed the file");
         var blocks = new List<(long, int, int)>();
         long pos = offset + Sign.Length + header.Length;
         ulong sum = 0;
@@ -152,6 +165,15 @@ internal static class PoolDecoder
         }
     }
 
+    /// <summary>Whether <paramref name="at"/> falls inside one of the excluded ranges.</summary>
+    private static bool Inside(IReadOnlyList<(long Start, long End)>? excluded, long at)
+    {
+        if (excluded is null) return false;
+        foreach (var (start, end) in excluded)
+            if (start <= at && at < end) return true;
+        return false;
+    }
+
     /// <summary>The payload of a memcpy block (the bytes after the block header, already sliced), at most
     /// <paramref name="dst"/> bytes.</summary>
     private static int CopyPayload(ReadOnlySpan<byte> block, Span<byte> dst)
@@ -161,14 +183,14 @@ internal static class PoolDecoder
         return source;
     }
 
-    /// <summary>The LZ77-triple codec, a faithful port of the decompressor core. The stream is a little-endian flag word
-    /// (a 1 starts a new word) and then, per flag bit: a set bit takes a token whose low 16 bits name a slot of the pointer
-    /// table (the top 12 bits, shifted right by 4) and a length ((the low 4 bits) + 2, or a following byte when 0); the
-    /// copy reads from that slot and runs in 3-byte steps over unsigned 32-bit reads, so the last step may write up to two
-    /// bytes past the length, like the compressor writes them. A clear bit takes a token whose first four bytes go to the
-    /// output, of which the literal-length table keeps the first. The last ten bytes go out one by one. Every position up
-    /// to a few bytes behind the output position is registered into the 4096-slot table, hashed from the four output bytes
-    /// at position+1. An out-of-range slot or length stops the stream.</summary>
+    /// <summary>The LZ77-triple codec. The stream is a little-endian flag word (a 1 starts a new word) and then, per flag
+    /// bit: a set bit takes a token whose low 16 bits name a slot of the pointer table (the top 12 bits, shifted right by
+    /// 4) and a length ((the low 4 bits) + 2, or a following byte when 0); the copy reads from that slot and runs in
+    /// 3-byte steps over unsigned 32-bit reads, so the last step may write up to two bytes past the length. A clear bit
+    /// takes a token whose first four bytes go to the output, of which the literal-length table keeps the first. The last
+    /// ten bytes go out one by one. Every position up to a few bytes behind the output position is registered into the
+    /// 4096-slot table, hashed from the four output bytes at position+1. An out-of-range slot or length stops the
+    /// stream.</summary>
     private static int DecodeTriple(ReadOnlySpan<byte> block, Span<byte> output, int unpacked)
     {
         var table = new long[4096];

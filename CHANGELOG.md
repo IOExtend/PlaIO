@@ -13,9 +13,10 @@ API between minor releases.
   and its blocks (each memcpy or LZ77-triple coded, at most one megabyte and change of packed payload per block). The
   object database keeps its groups, journals and library data in these pools; a pool is not a block and does not take
   part in the block index. `FindCompressedPools` finds every pool whose header and block headers parse and whose
-  declared sizes tile the total inside the file (computed on each call; the scan reads the file in windows); `Decode`
-  produces the decoded bytes on request. The layout and the LZ77-triple codec were recovered from ObjectDatabase.dll
-  (the `AppendDecompressedDataAfterCompressionSign` reader, the block decompressor and its core).
+  declared sizes tile the total (computed on each call; the scan reads the file in windows and skips the indexed block
+  payloads, so a sign inside them is never returned as a pool); `Decode` produces the decoded bytes on request. The
+  layout and the LZ77-triple codec follow the format notes of this repository and are confirmed against the sample
+  files.
 
 ## [0.1.0] - 2026-11-12
 

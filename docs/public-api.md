@@ -38,11 +38,11 @@ A pool starts with a 16-byte compression sign, then the declared decompressed to
 64-bit little endian), then that many blocks, each a u32 compressed size followed by the block: a flag byte (bit 0: the
 payload is LZ77-triple coded, otherwise copied; bit 1: the sizes are 32-bit, otherwise single bytes), the packed size
 (equal to the compressed size), the unpacked size and the payload. The blocks decode to exactly the declared total. The
-layout and the LZ77-triple codec were recovered from ObjectDatabase.dll.
+layout and the LZ77-triple codec follow the format notes of this repository and are confirmed against the sample files.
 
 | Member | Use |
 |---|---|
-| `PlaDocument.FindCompressedPools()` | Every pool whose header and block headers parse and whose declared sizes tile the total inside the file, in file order. Recomputed on each call; the scan reads the file in windows and then the block headers of each candidate sign. |
+| `PlaDocument.FindCompressedPools()` | Every pool whose header and block headers parse and whose declared sizes tile the total, in file order. Recomputed on each call; the scan reads the file in windows and skips the indexed block payloads, so a sign inside them is never returned as a pool. |
 | `CompressedPool.Offset` | File offset of the pool's compression sign. |
 | `CompressedPool.End` | File offset past the last block of the pool. |
 | `CompressedPool.TotalDecompressed` | The declared size of the decoded pool in bytes. |

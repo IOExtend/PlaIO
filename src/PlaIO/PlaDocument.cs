@@ -143,13 +143,17 @@ public sealed class PlaDocument : IDisposable
     }
 
     /// <summary>Finds the compressed storage pools of the object database: every 16-byte compression sign in the file
-    /// whose header and block headers parse and whose declared sizes tile the total inside the file. These pools sit in
-    /// the gaps between blocks, outside the block index. Computed on each call; the scan reads the file in windows and
-    /// then the block headers of each candidate.</summary>
+    /// whose header and block headers parse and whose declared sizes tile the total. These pools sit in the gaps between
+    /// blocks; the byte ranges of the indexed blocks are excluded, so a sign that a block payload happens to carry is
+    /// never returned as a pool. Computed on each call; the scan reads the file in windows and then the block headers of
+    /// each candidate.</summary>
     public IReadOnlyList<CompressedPool> FindCompressedPools()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return PoolDecoder.Find(_stream, Length)
+        // The indexed block payloads are excluded whole: their bytes are data, and a compression sign inside them is
+        // content, not a pool start.
+        var excluded = Blocks.Select(b => (b.PayloadOffset, b.End)).ToList();
+        return PoolDecoder.Find(_stream, Length, excluded)
             .Select(p => new CompressedPool(this, p.Offset, p.End, (long)p.Total, p.BlockCount))
             .ToList()
             .AsReadOnly();
