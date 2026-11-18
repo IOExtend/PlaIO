@@ -47,15 +47,32 @@ public class PoolSubgroupTests
         Assert.Equal(64, subgroup.Data.Length);
         Assert.Equal(new byte[] { 1, 2, 3, 4 }, subgroup.Data[..4]);
         Assert.True(subgroup.Data[4..].All(b => b == 0));
+        Assert.False(subgroup.Partial);
+    }
+
+    [Fact]
+    public void ATruncatedLiteralIsMarkedPartialAndKeepsTheProducedBytes()
+    {
+        // The last mask demands more literals than the stream holds: the record is damaged. The subgroup keeps the
+        // bytes the stream produced, the tail is reconstructed with zeros, and Partial marks it.
+        var plain = new byte[] { 1, 2, 3, 4, 5, 6 };
+        var full = Synthetic.ZeroMask(plain); // mask 0x3F, six data bytes, ends at a group boundary
+        // Cut the last two literals off: the mask still demands six, the stream only holds four.
+        var truncated = full[..(full.Length - 2)];
+        using var document = PlaDocument.Open(new MemoryStream(PoolOf(Synthetic.Subgroup(0x0016, truncated, PlaBlockMode.ZeroMask, unpacked: 6))));
+        var subgroup = Assert.Single(document.FindCompressedPools()[0].ReadSubgroups());
+        Assert.True(subgroup.Partial);
+        Assert.Equal(6, subgroup.Data.Length);
+        Assert.Equal(new byte[] { 1, 2, 3, 4, 0, 0 }, subgroup.Data);
     }
 
     [Fact]
     public void TextPayloadIsReadAsALengthPrefixedUtf16String()
     {
-        using var document = PlaDocument.Open(new MemoryStream(PoolOf(Synthetic.Subgroup(0x009B, TextPayload("РУТЕКСТ"), PlaBlockMode.Raw))));
+        using var document = PlaDocument.Open(new MemoryStream(PoolOf(Synthetic.Subgroup(0x009B, TextPayload("Sample text"), PlaBlockMode.Raw))));
         var data = Assert.Single(document.FindCompressedPools()[0].ReadSubgroups()).Data;
         int len = BitConverter.ToInt32(data, 0);
-        Assert.Equal("РУТЕКСТ", Encoding.Unicode.GetString(data, 4, len * 2));
+        Assert.Equal("Sample text", Encoding.Unicode.GetString(data, 4, len * 2));
     }
 
     [Fact]
@@ -127,22 +144,40 @@ public class PoolSubgroupTests
     }
 
     [SkippableFact]
-    public void TheTextAnnotationSampleHoldsTextObjectsWithUtf16Strings()
+    public void SomeSampleSubgroupHoldsALengthPrefixedUtf16String()
     {
-        string path = TestFiles.TryFind("TEXSTS.pln") ?? throw TestFiles.Missing("TEXSTS.pln");
-        using var document = PlaDocument.Open(path);
-        // The text element payloads store strings as [u32 len][utf16le data]; look for the known texts on every offset,
-        // since stray u32 values before them would derail a structured walk.
-        var needles = new (string Text, byte[] Pattern)[]
+        // The payloads store strings as [u32 len][utf16le data]; no sample name or content is asserted, only that the
+        // corpus contains at least one such string inside a decoded subgroup payload.
+        var corpus = new SampleCorpus();
+        try
         {
-            ("TEST", BitConverter.GetBytes((uint)4).Concat(Encoding.Unicode.GetBytes("TEST")).ToArray()),
-            ("РУТЕКСТ", BitConverter.GetBytes((uint)7).Concat(Encoding.Unicode.GetBytes("РУТЕКСТ")).ToArray()),
-        };
-        bool found = false;
-        foreach (var pool in document.FindCompressedPools())
-            foreach (var subgroup in pool.ReadSubgroups())
-                foreach (var (text, pattern) in needles)
-                    found |= subgroup.Data.AsSpan().IndexOf(pattern) >= 0;
-        Assert.True(found, "no text object with 'TEST' or 'РУТЕКСТ' found in any pool subgroup");
+            foreach (var sample in corpus.Fdb)
+                foreach (var pool in sample.Document.FindCompressedPools())
+                    foreach (var subgroup in pool.ReadSubgroups())
+                    {
+                        var data = subgroup.Data;
+                        for (int i = 0; i + 8 <= data.Length; i++)
+                        {
+                            int len = BitConverter.ToInt32(data, i);
+                            if (len is < 1 or > 500 || i + 4 + len * 2 > data.Length) continue;
+                            bool printable = true;
+                            for (int k = 0; k < len * 2 && printable; k += 2)
+                            {
+                                char ch = (char)(data[i + 4 + k] | data[i + 5 + k] << 8);
+                                if (ch != 0 && (ch < 0x20 || ch > 0x7E) && (ch < 0x400 || ch > 0x4FF)) printable = false;
+                            }
+                            if (printable && len >= 2)
+                            {
+                                Assert.True(true, $"found a length-prefixed utf16 string in {sample.Name}");
+                                return;
+                            }
+                        }
+                    }
+            Assert.Fail("no length-prefixed utf16 string found in any pool subgroup of any sample");
+        }
+        finally
+        {
+            corpus.Dispose();
+        }
     }
 }

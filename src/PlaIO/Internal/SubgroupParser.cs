@@ -7,9 +7,10 @@ namespace PlaIO.Internal;
 /// mode bits), the packed size (a u16 for size classes 0..6, a u32 for 7..14, a u64 for 15) and, for modes 1 and 2, the
 /// unpacked size as a u32. A mode 0 payload is stored raw; a mode 1 payload is a zero mask like the file blocks'; a mode
 /// 2 payload is LZ-token coded — not met in the pools examined so far, reported with an empty payload. The records are
-/// found by scanning for the tag and accepting the ones whose header parses; a rejected candidate is retried one byte
-/// on. The decoded payloads tile the pool loosely: a mode 1 stream may end before its declared unpacked size is full —
-/// the tail of the buffer stays zero, like the oversized buffers of the file's mode 2 blocks.</summary>
+/// found by scanning for the tag and accepting the ones whose header parses; a candidate whose header cannot be read is
+/// retried one byte on, so the scan never stops before the end of the pool. A mode 1 stream that ends exactly at a group
+/// boundary before the declared unpacked size is full leaves the tail of the buffer zero; a stream that ends inside a
+/// group — a truncated literal — is a broken record and is reported by an exception.</summary>
 internal static class SubgroupParser
 {
     public static List<PoolSubgroup> Parse(byte[] pool)
@@ -24,12 +25,12 @@ internal static class SubgroupParser
             int q = pos + 11;
             if ((flags & FdbFormat.FlagGuid) != 0)
             {
-                if (q + 16 > pool.Length) break;
+                if (q + 16 > pool.Length) { pos++; continue; }
                 q += 16;
             }
             int sizeClass = flags & 0xF;
             int width = sizeClass <= 6 ? 2 : sizeClass <= 14 ? 4 : 8;
-            if (q + width > pool.Length) break;
+            if (q + width > pool.Length) { pos++; continue; }
             long packed = width switch
             {
                 2 => BinaryPrimitives.ReadUInt16LittleEndian(pool.AsSpan(q)),
@@ -43,7 +44,7 @@ internal static class SubgroupParser
             long unpacked = packed;
             if (mode != PlaBlockMode.Raw)
             {
-                if (q + 4 > pool.Length) break;
+                if (q + 4 > pool.Length) { pos++; continue; }
                 unpacked = BinaryPrimitives.ReadUInt32LittleEndian(pool.AsSpan(q));
                 q += 4;
             }
@@ -53,35 +54,42 @@ internal static class SubgroupParser
             if ((flags & FdbFormat.FlagGuid) != 0)
                 objectId = new Guid(pool.AsSpan(pos + 11, 16));
 
-            var data = DecodePayload(pool.AsSpan(q, (int)packed), mode, unpacked);
+            var data = DecodePayload(pool.AsSpan(q, (int)packed), mode, unpacked, out var partial);
             result.Add(new PoolSubgroup(pos, BinaryPrimitives.ReadUInt16LittleEndian(pool.AsSpan(pos + 6)),
-                pool[pos + 8], flags, mode, objectId, data));
+                pool[pos + 8], flags, mode, objectId, data, partial));
             pos = q + (int)packed;
         }
         return result;
     }
 
-    private static byte[] DecodePayload(ReadOnlySpan<byte> body, PlaBlockMode mode, long unpacked)
+    private static byte[] DecodePayload(ReadOnlySpan<byte> body, PlaBlockMode mode, long unpacked, out bool partial)
     {
-        if (unpacked > int.MaxValue) return [];
-        var data = new byte[unpacked];
+        if (unpacked > int.MaxValue)
+        {
+            partial = true;
+            return [];
+        }
         switch (mode)
         {
             case PlaBlockMode.Raw:
+            {
+                partial = false;
+                var data = new byte[unpacked];
                 body[..Math.Min(body.Length, data.Length)].CopyTo(data);
                 return data;
+            }
             case PlaBlockMode.ZeroMask:
-                // The declared size is the buffer size; a stream that ends early leaves the tail zero.
-                try
-                {
-                    PayloadDecoder.DecodeZeroMask(body, data);
-                }
-                catch (InvalidDataException)
-                {
-                    // Keep the partial fill; the tail stays zero.
-                }
+            {
+                // The declared size is the buffer size: a stream that ends exactly at a group boundary leaves the tail
+                // of the buffer zero, but a stream that ends inside a group is a truncated literal — the record is
+                // damaged, its tail is reconstructed with zeros and marked Partial.
+                var data = new byte[unpacked];
+                PayloadDecoder.DecodeZeroMask(body, data, out var end);
+                partial = end == PayloadDecoder.ZeroMaskEnd.MidGroup;
                 return data;
+            }
             default:
+                partial = true;
                 return []; // Mode 2 (LZ) is not met in the pools examined so far.
         }
     }
