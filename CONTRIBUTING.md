@@ -100,8 +100,11 @@ Write commit messages in the imperative mood, for example,
 ## Releases
 
 Push a tag matching the package version, such as `v0.1.0`, to run `release.yml`.
-The workflow builds and tests the solution, attaches packages, symbols, source and checksums to a GitHub release published at once (not a draft),
-and publishes the NuGet packages through Trusted Publishing. The release notes are the section of `CHANGELOG.md` for the version, so add that section before the tag.
+The workflow builds and tests the solution, packs it, and pushes the NuGet packages first, through Trusted Publishing
+(`--skip-duplicate` makes a repeated run idempotent). Only then does it attach packages, symbols, source and checksums
+to a GitHub release published at once (not a draft). A tag whose version contains a hyphen, such as `v0.2.0-preview.1`,
+is published as a prerelease. This is the IOExtend release order: NuGet first, the GitHub release second.
+The release notes are the section of `CHANGELOG.md` for the version, so add that section before the tag.
 The NuGet policy must name this repository (`IOExtend/PlaIO`), `release.yml`, the configured NuGet profile and the `PlaIO*` package pattern.
 The repository variable `NUGET_USER` must hold the name of that NuGet profile; the workflow reads it for the Trusted Publishing login.
 
