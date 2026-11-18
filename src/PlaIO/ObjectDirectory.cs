@@ -1,10 +1,10 @@
 namespace PlaIO;
 
-/// <summary>One 30-byte directory record: <c>[u16 class][u64 pos][u32 count][GUID16]</c>. The units of
-/// <see cref="Position"/> and <see cref="Count"/> are not documented.</summary>
+/// <summary>One 30-byte directory record: <c>[u16 class][u64 pos][u32 count][GUID16]</c>. The position and count name a
+/// byte extent of the decoded global stream (see <see cref="PlaDocument.OpenStream"/>), the object's data.</summary>
 /// <param name="ClassNumber">The class number of the object, raw. It is not mapped to a name.</param>
-/// <param name="Position">Start of the object's extent, raw.</param>
-/// <param name="Count">Length of the object's extent, raw.</param>
+/// <param name="Position">Start of the object's extent in the decoded global stream.</param>
+/// <param name="Count">Length of the object's extent in bytes.</param>
 /// <param name="ObjectId">The object GUID.</param>
 public readonly record struct ObjectDirectoryRecord(ushort ClassNumber, ulong Position, uint Count, Guid ObjectId);
 

@@ -7,6 +7,12 @@
   <!-- Runtime dependencies of the library: none. See docs/dependencies.md. -->
 
   <ItemGroup>
+    <!-- The scene contract of PlaIO.Scene: any patch of the 0.1 line, no preview of the next (breaking) minor that
+         IOScene publishes. -->
+    <PackageVersion Include="IOScene" Version="[0.1.1, 0.2.0-0.0)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Build-time only. -->
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.403" />
   </ItemGroup>
