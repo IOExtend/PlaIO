@@ -30,6 +30,20 @@ The `PlaIO` package is the supported surface listed here; every public type is i
 | `ObjectDirectory` | A run of directory records inside a raw block: `Block`, `RecordOffset` (payload offset of the first record), `Phase` (`RecordOffset % 30`), `Records`, `AbuttingPairs`, `OverlappingPairs`, `DuplicatePositions`. The run is an estimate and can be shorter than the real directory: it stops after more than 8 consecutive records without an abutting neighbour. |
 | `ObjectDirectoryRecord` | The 30-byte record `[u16 class][u64 pos][u32 count][GUID16]` as `ClassNumber`, `Position`, `Count`, `ObjectId`. The units of position and count are not documented, and the class number is not mapped to a class name. |
 
+## Compressed pools
+
+Pool framing was verified using saved container bytes. A 16-byte marker is followed by the decoded total and frame count
+as little-endian u64 values. Each frame has a u32 size followed by a standalone QuickLZ level 1 frame. The decoder
+implements the [public QuickLZ 1.5.0 format](https://github.com/ReSpeak/quicklz/blob/d905415a88aed6dae685bae500025ccc81de3822/Format.md);
+independent decoding of saved-file frames verified the correspondence. PlaIO has no runtime dependency on QuickLZ.
+
+| Member | Use |
+|---|---|
+| `PlaDocument.FindCompressedPools()` | Finds pool markers outside indexed block payloads and validates frame headers and sizes. Computed on each call. |
+| `CompressedPool.Offset` and `End` | File offsets of the pool marker and of the end of the pool. |
+| `CompressedPool.TotalDecompressed` and `BlockCount` | Decoded byte count and number of frames in the pool. |
+| `CompressedPool.Decode()` | Decoded frame payloads in order. Throws `InvalidDataException` on invalid framing or data and `ObjectDisposedException` after disposing the document. |
+
 ## BIMx file (`.bimx`)
 
 | Member | Use |

@@ -142,6 +142,19 @@ public sealed class PlaDocument : IDisposable
         return found.AsReadOnly();
     }
 
+    /// <summary>Finds compressed pools whose marker and frame headers parse, outside indexed block payloads.</summary>
+    public IReadOnlyList<CompressedPool> FindCompressedPools()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return PoolReader.Find(_stream, Length, Blocks).Select(range => new CompressedPool(this, range)).ToList().AsReadOnly();
+    }
+
+    internal byte[] DecodePool(long offset)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return PoolReader.Decode(_stream, Length, offset);
+    }
+
     /// <summary>Releases the stream unless the document was opened with leaveOpen.</summary>
     public void Dispose()
     {

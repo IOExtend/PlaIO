@@ -4,6 +4,13 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 and the project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html); versions before 1.0 may change the
 API between minor releases.
 
+## [Unreleased]
+
+### Added
+
+- `PlaDocument.FindCompressedPools()` finds pools outside indexed block payloads. `CompressedPool.Decode()` reads
+  stored and QuickLZ level 1 frames using the public format description and saved-file verification.
+
 ## [0.1.0] - 2026-11-12
 
 ### Added
