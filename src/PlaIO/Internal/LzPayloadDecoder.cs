@@ -1,11 +1,13 @@
+using System.Buffers.Binary;
+
 namespace PlaIO.Internal;
 
 /// <summary>Decodes the mode 2 (LZ) token stream of one block payload and appends every produced byte to the window —
 /// the global decompressed stream of the whole file. Back-references reach anywhere inside that stream, including the
 /// output of preceding blocks. Returns the number of body bytes consumed.</summary>
 /// <remarks>
-/// <para>The payload may start with a 9-byte stream header <c>[u8][u32 packed][u32 unpacked]</c>: it is present when the
-/// u32 at offset 5 equals the block's declared unpacked size, and the token stream starts after it.</para>
+/// <para>A 9-byte stream header has a 0x46 or 0x47 marker and two little-endian sizes matching the packed and
+/// unpacked lengths. The token stream follows the header.</para>
 /// <para>The stream is a chain of sequences. A sequence starts with a token byte: the high nibble is the number of
 /// literal bytes that follow (15 = extended: the following bytes are added while they equal 255). After the literals, if
 /// the output is not complete yet, come the match fields: a 16-bit big-endian distance and a length byte. A distance of 0
@@ -45,17 +47,13 @@ internal static class LzPayloadDecoder
         int src = 0, o = 0;
         int windowStart = window.Count;
         uint declared = (uint)output.Length;
-        if (body.Length >= 9)
+        if (body.Length > 9 && body[0] is 0x46 or 0x47)
         {
-            // The stream header is [u8][u32 body length][u32 unpacked size]: both u32 fields agree with the payload
-            // itself, one with its length and one with the block's declared unpacked size (either order). Requiring
-            // both keeps the four bytes of a literal run inside the stream from being mistaken for a header.
-            uint lengthField = body[1] | ((uint)body[2] << 8) | ((uint)body[3] << 16) | ((uint)body[4] << 24);
-            uint sizeField = body[5] | ((uint)body[6] << 8) | ((uint)body[7] << 16) | ((uint)body[8] << 24);
-            bool structured = lengthField == (uint)body.Length && sizeField == declared
-                || sizeField == (uint)body.Length && lengthField == declared;
-            if (structured)
-                src = 9; // the token stream starts after the header
+            uint firstSize = BinaryPrimitives.ReadUInt32LittleEndian(body[1..]);
+            uint secondSize = BinaryPrimitives.ReadUInt32LittleEndian(body[5..]);
+            if ((firstSize == (uint)body.Length && secondSize == declared) ||
+                (secondSize == (uint)body.Length && firstSize == declared))
+                src = 9;
         }
 
         void RollBack()

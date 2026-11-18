@@ -8,7 +8,7 @@ PlaIO is a .NET library and command line tool that reads the container structure
 
 - Detects the file kind from the first bytes of a file.
 - Reads the header of the FDB container that `.pla` and `.pln` files share, and builds an index of its blocks.
-- Decodes block payloads stored raw (mode 0) or zero-masked (mode 1). Mode 2 (LZ) payloads are recognised but not decoded, and a small share of mode 1 blocks in real files does not decode to its declared size.
+- Decodes raw (mode 0), zero-mask (mode 1), and LZ (mode 2) payloads. A small share of mode 1 blocks in real files does not decode to its declared size.
 - Searches raw blocks for object directories and returns their records as stored (class number, position, count, GUID).
 - Reads the PNG cover image of a `.bimx` file.
 

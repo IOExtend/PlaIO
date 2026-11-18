@@ -110,18 +110,68 @@ public class LzPayloadTests
         Assert.Equal(new byte[] { 0x77, 0x78, 0, 0 }, payload);
     }
 
-    [Fact]
-    public void StreamHeaderIsSkippedWhenItsSizeFieldMatches()
+    [Theory]
+    [InlineData(0x46)]
+    [InlineData(0x47)]
+    public void StreamHeaderIsSkippedWhenItsMarkerAndSizesMatch(byte marker)
     {
         // [u8][u32 body length][u32 unpacked][token stream]: the u32 at offset 1 equals the whole payload length and the
         // u32 at offset 5 equals the declared size, so the token stream starts after the 9-byte header.
         var tail = Synthetic.Concat([0x40], "ABCD"u8.ToArray(), [0xFF, 0xFE]);
-        var header = Synthetic.Concat([0x47], BitConverter.GetBytes((uint)(9 + tail.Length)), BitConverter.GetBytes(4u));
+        var header = Synthetic.Concat([marker], BitConverter.GetBytes((uint)(9 + tail.Length)), BitConverter.GetBytes(4u));
         var lz = Synthetic.Concat(header, tail);
         using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
             Synthetic.Block(PlaBlockMode.Lz, lz, unpacked: 4))));
 
         Assert.Equal("ABCD"u8.ToArray(), document.ReadPayload(document.Blocks.Single()));
+    }
+
+    [Fact]
+    public void LiteralRunWithBothSizesDoesNotBecomeAHeader()
+    {
+        byte[] expected = [10, 0, 0, 0, 9, 0, 0, 0, 42];
+        byte[] lz = Synthetic.Concat([0x90], expected);
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.Lz, lz, unpacked: (uint)expected.Length))));
+
+        Assert.Equal(expected, document.ReadPayload(document.Blocks.Single()));
+    }
+
+    [Fact]
+    public void ShortZeroMaskPredecessorIsNotUsedAsMatchHistory()
+    {
+        using var document = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.ZeroMask, [1, 9], unpacked: 16),
+            Synthetic.Block(PlaBlockMode.Lz, [0, 0, 8, 1], unpacked: 1))));
+
+        Assert.Throws<InvalidDataException>(() => document.ReadPayload(document.Blocks[0]));
+        Assert.Throws<InvalidDataException>(() => document.ReadPayload(document.Blocks[1]));
+    }
+
+    [Fact]
+    public void ReadingLzDoesNotReadZeroMaskWriterSlack()
+    {
+        byte[] data = Synthetic.Fdb(
+            Synthetic.Block(PlaBlockMode.ZeroMask, new byte[1024 * 1024], unpacked: 1),
+            Synthetic.Block(PlaBlockMode.Lz, [0, 0, 1, 1], unpacked: 1));
+        using var stream = new CountingStream(data);
+        using var document = PlaDocument.Open(stream, leaveOpen: true);
+        stream.BytesRead = 0;
+
+        Assert.Equal(new byte[] { 0 }, document.ReadPayload(document.Blocks[1]));
+        Assert.Equal(6, stream.BytesRead);
+    }
+
+    private sealed class CountingStream(byte[] data) : MemoryStream(data)
+    {
+        public int BytesRead { get; set; }
+
+        public override int Read(Span<byte> buffer)
+        {
+            int count = base.Read(buffer);
+            BytesRead += count;
+            return count;
+        }
     }
 
     [Fact]

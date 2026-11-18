@@ -8,8 +8,8 @@ API between minor releases.
 
 ### Added
 
-- `PlaDocument.ReadPayload` decodes mode 2 (LZ) payloads. A payload may start with a 9-byte stream header holding the
-  packed and/or unpacked size. The token stream produces the block's declared unpacked size and may reference the
+- `PlaDocument.ReadPayload` decodes mode 2 (LZ) payloads. A payload may start with a 9-byte stream header with a
+  0x46 or 0x47 marker and matching packed and unpacked sizes. The token stream produces the block's declared unpacked size and may reference the
   decompressed output of any preceding block of the file, so `ReadPayload` for a mode 2 block decodes the file from the
   start into one global window; the cost of the call grows with the size of the file. Preceding blocks that do not
   decode (false entries of the scan) are skipped and leave the window unchanged. A final match may omit the length byte

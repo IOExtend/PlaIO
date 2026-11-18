@@ -10,8 +10,8 @@ PlaIO is a pure managed .NET library and command line tool that reads the contai
 - Detects the file kind from the first bytes: the container shared by `.pla` and `.pln`, or `.bimx`.
 - Reads the container header and exposes its fields as raw values where their meaning is not documented.
 - Indexes the `BL` and `DY` blocks of the container in one forward scan, without loading the whole file.
-- Decodes block payloads stored raw (mode 0) or with zero masks (mode 1). Mode 2 (LZ) payloads are recognised but not
-  decoded, and some mode 1 blocks in real files do not decode (see [Limitations](#limitations)).
+- Decodes block payloads stored raw (mode 0), with zero masks (mode 1), or with LZ compression (mode 2).
+  Some mode 1 blocks in real files do not decode (see [Limitations](#limitations)).
 - Searches raw blocks for object directories (30-byte records of class number, position, count and object GUID).
 - Reads the PNG cover image at the start of a `.bimx` file and reports where the rest of the content begins.
 
@@ -88,7 +88,6 @@ using (var document = PlaDocument.Open("project.pln"))
 
     foreach (var block in document.Blocks)
     {
-        if (block.Mode == PlaBlockMode.Lz) continue; // recognised, not decoded
         try
         {
             byte[] payload = document.ReadPayload(block);
@@ -109,8 +108,8 @@ using (var bimx = BimxDocument.Open("model.bimx"))
 ```
 
 `PlaFile.DetectKind` tells the kinds apart before a file is opened. `ReadPayload` throws `InvalidDataException` for a
-payload that does not decode to its declared size. The library never
-writes to the console and has no diagnostic output; problems are reported as exceptions.
+payload that does not decode. Each mode 2 read rebuilds the decoded history of preceding blocks. The library reports
+errors through exceptions.
 
 See the [public API](docs/public-api.md) for the supported surface and [dependencies](docs/dependencies.md) for package
 details.
