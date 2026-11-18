@@ -32,6 +32,9 @@ API between minor releases.
 - The position and count of `ObjectDirectoryRecord` are now documented: a byte extent of the decoded global stream,
   confirmed against the object directories of real files.
 
+- `PlaDocument.FindCompressedPools()` finds pools outside indexed block payloads. `CompressedPool.Decode()` reads
+  stored and QuickLZ level 1 frames using the public format description and saved-file verification.
+
 ### Changed
 
 - The release workflow follows the IOExtend release order: the NuGet packages are pushed before the GitHub release is

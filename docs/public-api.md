@@ -35,6 +35,20 @@ The `PlaIO` package is the supported surface listed here; every public type is i
 | `PlaStream.ReadExtent(long position, long count)` | The bytes of one extent. Throws `ArgumentOutOfRangeException` for negative or out-of-bounds extents and `InvalidDataException` for extents that reach the unreliable range. |
 | `PlaStream.ReadExtent(ObjectDirectoryRecord record)` | The bytes addressed by a directory record. Throws `InvalidDataException` if the extent exceeds the stream or reaches the unreliable range. |
 
+## Compressed pools
+
+Pool framing was verified using saved container bytes. A 16-byte marker is followed by the decoded total and frame count
+as little-endian u64 values. Each frame has a u32 size followed by a standalone QuickLZ level 1 frame. The decoder
+implements the [public QuickLZ 1.5.0 format](https://github.com/ReSpeak/quicklz/blob/d905415a88aed6dae685bae500025ccc81de3822/Format.md);
+independent decoding of saved-file frames verified the correspondence. PlaIO has no runtime dependency on QuickLZ.
+
+| Member | Use |
+|---|---|
+| `PlaDocument.FindCompressedPools()` | Finds pool markers outside indexed block payloads and validates frame headers and sizes. Computed on each call. |
+| `CompressedPool.Offset` and `End` | File offsets of the pool marker and of the end of the pool. |
+| `CompressedPool.TotalDecompressed` and `BlockCount` | Decoded byte count and number of frames in the pool. |
+| `CompressedPool.Decode()` | Decoded frame payloads in order. Throws `InvalidDataException` on invalid framing or data and `ObjectDisposedException` after disposing the document. |
+
 ## BIMx file (`.bimx`)
 
 | Member | Use |
