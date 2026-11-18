@@ -5,6 +5,12 @@
 PlaIO is a pure managed .NET library and command line tool that reads the container of Archicad project files (`.pla`,
 `.pln`) and the cover image of BIMx files (`.bimx`) directly from disk, without Archicad and without native dependencies.
 
+In the [IOExtend](https://github.com/IOExtend) ecosystem PlaIO is a leaf engine: it depends on no other IOExtend package
+and on no scene type. The `PlaIO.Scene` adapter in this repository turns an Archicad container into an `IOScene` scene
+document for [IOViewer](https://github.com/IOExtend/IOViewer) and coordination tools; while the reader decodes only the
+container, the scene holds one model and no elements, and the adapter is not published yet — it ships on a `PlaIO`
+release tag when the reader decodes elements and geometry (see [the scene adapter](docs/scene.md)).
+
 ## What it does
 
 - Detects the file kind from the first bytes: the container shared by `.pla` and `.pln`, or `.bimx`.

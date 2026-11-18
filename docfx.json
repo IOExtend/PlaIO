@@ -2,7 +2,8 @@
   "metadata": [
     {
       "src": [
-        { "src": "src/PlaIO", "files": ["PlaIO.csproj"] }
+        { "src": "src/PlaIO", "files": ["PlaIO.csproj"] },
+        { "src": "src/PlaIO.Scene", "files": ["PlaIO.Scene.csproj"] }
       ],
       "dest": "docs/api",
       "properties": { "TargetFramework": "net10.0" },
