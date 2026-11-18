@@ -34,7 +34,7 @@ The limits are fixed; the tool has no option to change them.
 | --- | --- |
 | At most 1048576 (2^20) blocks in one index | A file with more blocks is rejected with exit code 2. |
 | Unpacked size of a block at most 2^28 bytes and at most 300 times its packed size plus 65536 | A block header outside these bounds is not taken as a block; the scan moves on. |
-| Mode 2 (LZ) payloads | Recognised and listed, but not decoded. No command decodes payloads; `directory` reads raw blocks only. |
+| Mode 2 (LZ) payloads | Listed by `blocks`. The CLI `directory` command reads raw blocks only. |
 | Object directories | Searched in raw (mode 0) blocks of at least 1920 bytes, at most one per block. A directory needs at least 64 records whose extents mostly abut. The run that is reported is an estimate and can be shorter than the real directory. |
 
 The meaning of `pos` and `count` in a directory record is not known, class numbers are not mapped to class names and the
@@ -153,6 +153,6 @@ case $? in
   2) echo "the file cannot be read, or directories.json cannot be written" ;;
 esac
 
-# count the blocks whose payload is not decoded (mode 2)
+# count the mode 2 blocks
 plaio blocks project.pln | awk -F '\t' 'NR > 1 && $8 == "Lz"' | wc -l
 ```

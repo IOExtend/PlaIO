@@ -14,12 +14,25 @@ API between minor releases.
   contents), and the `container-only` diagnostic. The project is `IsPackable=false` and is not published; it ships on a
   `PlaIO` release tag when the reader decodes elements and geometry. See `docs/scene.md`.
 
+- `PlaDocument.ReadPayload` decodes mode 2 (LZ) payloads. A payload may start with a 9-byte stream header with a
+  0x46 or 0x47 marker and matching packed and unpacked sizes. The token stream produces the block's declared unpacked size and may reference the
+  decompressed output of any preceding block of the file, so `ReadPayload` for a mode 2 block decodes the file from the
+  start into one global window; the cost of the call grows with the size of the file. Preceding blocks that do not
+  decode (false entries of the scan) are skipped and leave the window unchanged. A final match may omit the length byte
+  (the match length is the remainder of the output). Some blocks declare an output buffer larger than the stream
+  produces: the stream simply ends with the body, the produced bytes fill the head of the buffer and the tail stays
+  zero — the global window holds the buffer space, so directory positions keep addressing it. A back-reference beyond
+  the decoded stream throws `InvalidDataException`.
+
 ### Changed
 
 - The release workflow follows the IOExtend release order: the NuGet packages are pushed before the GitHub release is
   created (a refused first publication can be fixed and the job re-run, because `--skip-duplicate` makes the push
   repeatable), and a tag whose version contains a hyphen is published as a prerelease. The changelog section for the
   version is checked before anything is published.
+
+- `PlaDocument.ReadPayload` no longer throws `NotSupportedException` for mode 2 blocks: all three storage modes
+  (raw, zero mask, LZ) decode now.
 
 ## [0.1.0] - 2026-11-12
 

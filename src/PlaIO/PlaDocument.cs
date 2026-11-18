@@ -2,7 +2,7 @@ using PlaIO.Internal;
 
 namespace PlaIO;
 
-/// <summary>An open FDB container (.pla or .pln): the header, the block index and payload decoding for modes 0 and 1.
+/// <summary>An open FDB container (.pla or .pln): the header, the block index and payload decoding for modes 0, 1 and 2.
 /// The file is never loaded whole; payloads are read on request. Not thread-safe.</summary>
 public sealed class PlaDocument : IDisposable
 {
@@ -76,8 +76,11 @@ public sealed class PlaDocument : IDisposable
     }
 
     /// <summary>The decoded payload of a block of this document.</summary>
-    /// <exception cref="NotSupportedException">The block uses mode 2 (<see cref="PlaBlockMode.Lz"/>).</exception>
-    /// <exception cref="InvalidDataException">A mode-1 stream does not decode to the declared size, or the file is cut
+    /// <remarks>Reading a mode 2 (<see cref="PlaBlockMode.Lz"/>) block decodes every block of the file in order into
+    /// one global window first, because a mode 2 token stream may reference the output of any preceding block; the cost
+    /// of the call therefore grows with the size of the file. A preceding block that does not decode to its declared
+    /// size (a false entry of the scan) is skipped.</remarks>
+    /// <exception cref="InvalidDataException">A payload does not decode to its declared size, or the file is cut
     /// short.</exception>
     /// <exception cref="ArgumentException">The block is not one of the <see cref="Blocks"/> of this document.</exception>
     public byte[] ReadPayload(PlaBlock block) => ReadPayload(block, out _);
@@ -120,9 +123,95 @@ public sealed class PlaDocument : IDisposable
                 }
                 return payload;
             }
+            case PlaBlockMode.Lz:
+            {
+                // The mode-2 token stream references the decompressed output of all preceding blocks, so the whole
+                // file is decoded from the start and the requested block's output is returned. The cost of a call
+                // therefore grows with the size of the file. A preceding block that does not decode is a scanner
+                // false positive and not part of the real stream, so it is skipped.
+                var window = new List<byte>();
+                foreach (var b in _blocks)
+                {
+                    if (ReferenceEquals(b, block)) break;
+                    TryAppendToWindow(b, window);
+                }
+                var blockPayload = new byte[block.PackedSize];
+                StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, blockPayload, $"the payload of the block at 0x{block.Offset:x}");
+                // Mode 2 (LZ): the token stream produces the declared unpacked size (some blocks declare a buffer
+                // larger than the stream produces — the tail of the buffer stays zero) and may reference the window;
+                // the body tail after the output is complete is writer slack.
+                var output = new byte[block.UnpackedSize];
+                int lzConsumed;
+                try
+                {
+                    lzConsumed = LzPayloadDecoder.Decode(blockPayload, output, window, block.Offset, out _);
+                }
+                catch (InvalidDataException e)
+                {
+                    throw new InvalidDataException($"Block at 0x{block.Offset:x}: {e.Message}", e);
+                }
+                consumed = lzConsumed;
+                return output;
+            }
             default:
-                throw new NotSupportedException($"Block at 0x{block.Offset:x} uses payload mode 2 (LZ). Its compression is not documented yet; only modes 0 and 1 can be decoded.");
+                throw new NotSupportedException($"Block at 0x{block.Offset:x} uses an unknown payload mode {block.Mode}.");
         }
+    }
+
+    /// <summary>Appends the decoded payload of one block to the mode-2 global window, or leaves the window unchanged when
+    /// the block does not decode to its declared size (a false entry of the scan is not part of the real stream, so a
+    /// partial decode is rolled back). Returns whether the block was appended.</summary>
+    private bool TryAppendToWindow(PlaBlock b, List<byte> window)
+    {
+        int before = window.Count;
+        try
+        {
+            AppendToWindow(b, window);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            window.RemoveRange(before, window.Count - before);
+            return false;
+        }
+    }
+
+    /// <summary>Decodes the whole file once into the global window: the raw payloads, the full zero-mask decodes and the
+    /// mode-2 outputs, in block order. Blocks that do not decode to their declared size (false entries of the scan) are
+    /// skipped and reported in <paramref name="skipped"/>; the window stays as if they were not there.</summary>
+    internal List<byte> DecodeGlobalWindow(out IReadOnlyList<PlaBlock> skipped)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var window = new List<byte>();
+        var failed = new List<PlaBlock>();
+        foreach (var b in _blocks)
+        {
+            if (!TryAppendToWindow(b, window)) failed.Add(b);
+        }
+        skipped = failed.AsReadOnly();
+        return window;
+    }
+
+    /// <summary>Appends the decoded payload of one block to the mode-2 global window. Raw payloads are copied as they
+    /// are; a zero-mask payload contributes its full decode; a mode 2 payload is decoded and the decoder appends every
+    /// produced byte. Throws <see cref="InvalidDataException"/> when the block does not decode to its declared size.</summary>
+    private void AppendToWindow(PlaBlock b, List<byte> window)
+    {
+        if (b.Mode != PlaBlockMode.Lz)
+        {
+            window.AddRange(ReadPayload(b));
+            return;
+        }
+
+        var payload = new byte[b.PackedSize];
+        StreamReads.ReadExactlyAt(_stream, b.PayloadOffset, payload, $"the payload of the block at 0x{b.Offset:x}");
+        // Mode 2 (LZ): the token stream produces the declared unpacked size (some blocks declare a buffer
+        // larger than the stream produces — the tail of the buffer stays zero) and the decoder appends every
+        // produced byte to the window; the body tail after the output is complete is writer slack.
+        var output = new byte[b.UnpackedSize];
+        int produced;
+        LzPayloadDecoder.Decode(payload, output, window, b.Offset, out produced);
+        for (long i = produced; i < b.UnpackedSize; i++) window.Add(0); // the directory addresses the buffer space
     }
 
     /// <summary>Searches every raw block large enough for 64 records for an object directory (at most one per block).
