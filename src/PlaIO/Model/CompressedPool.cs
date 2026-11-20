@@ -34,8 +34,11 @@ public sealed class CompressedPool
     /// <exception cref="ObjectDisposedException">The owning document is disposed.</exception>
     public byte[] Decode() => _document.DecodePool(Offset);
 
-    /// <summary>Decodes the pool and reads BL-tagged records in pool order.</summary>
+    /// <summary>Decodes the pool and reads BL-tagged records in pool order. A mode-2 payload is an LZ token stream
+    /// whose back-references reach into the pool stream — the reconstruction of every preceding pool of the document
+    /// and of this pool before the record — so the pools are decoded in order until this one and the cost of the call
+    /// grows with the size of the file.</summary>
     /// <exception cref="InvalidDataException">The pool does not decode.</exception>
     /// <exception cref="ObjectDisposedException">The owning document is disposed.</exception>
-    public IReadOnlyList<PoolSubgroup> ReadSubgroups() => PoolSubgroupReader.Read(Decode());
+    public IReadOnlyList<PoolSubgroup> ReadSubgroups() => PoolSubgroupReader.Read(_document, this);
 }

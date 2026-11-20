@@ -13,6 +13,7 @@ public sealed class PlaDocument : IDisposable
     private readonly bool _leaveOpen;
     private readonly List<PlaBlock> _blocks;
     private readonly PlaReaderOptions _options;
+    private IReadOnlyList<CompressedPool>? _pools;
     private bool _disposed;
 
     private PlaDocument(Stream stream, bool leaveOpen, long length, FdbHeader header, List<PlaBlock> blocks, PlaReaderOptions options)
@@ -212,11 +213,14 @@ public sealed class PlaDocument : IDisposable
         return found.AsReadOnly();
     }
 
-    /// <summary>Finds compressed pools whose marker and frame headers parse, outside indexed block payloads.</summary>
+    /// <summary>Finds compressed pools whose marker and frame headers parse, outside indexed block payloads. The first
+    /// call scans the file; later calls return the cached list, so the pool objects stay identical.</summary>
     public IReadOnlyList<CompressedPool> FindCompressedPools()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return PoolReader.Find(_stream, Length, Blocks).Select(range => new CompressedPool(this, range)).ToList().AsReadOnly();
+        if (_pools is null)
+            _pools = PoolReader.Find(_stream, Length, Blocks).Select(range => new CompressedPool(this, range)).ToList().AsReadOnly();
+        return _pools;
     }
 
     internal byte[] DecodePool(long offset)
