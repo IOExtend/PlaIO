@@ -40,7 +40,12 @@ public sealed class PlaDocument : IDisposable
 
     /// <summary>Opens the file at <paramref name="path"/> for reading.</summary>
     /// <exception cref="InvalidDataException">The file is not an FDB container or is cut short.</exception>
-    public static PlaDocument Open(string path, PlaReaderOptions? options = null)
+    public static PlaDocument Open(string path)
+        => Open(path, options: null);
+
+    /// <summary>Opens the file at <paramref name="path"/> for reading with explicit reader options.</summary>
+    /// <exception cref="InvalidDataException">The file is not an FDB container or is cut short.</exception>
+    public static PlaDocument Open(string path, PlaReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(path);
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.RandomAccess);
@@ -59,7 +64,15 @@ public sealed class PlaDocument : IDisposable
     /// <paramref name="leaveOpen"/> is true; when this method throws, the stream stays with the caller.</summary>
     /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
     /// <exception cref="InvalidDataException">The data is not an FDB container or is cut short.</exception>
-    public static PlaDocument Open(Stream stream, bool leaveOpen = false, PlaReaderOptions? options = null)
+    public static PlaDocument Open(Stream stream, bool leaveOpen = false)
+        => Open(stream, leaveOpen, options: null);
+
+    /// <summary>Opens a container from a readable, seekable stream with explicit reader options. The document owns
+    /// the stream unless <paramref name="leaveOpen"/> is true; when this method throws, the stream stays with the
+    /// caller.</summary>
+    /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
+    /// <exception cref="InvalidDataException">The data is not an FDB container or is cut short.</exception>
+    public static PlaDocument Open(Stream stream, bool leaveOpen, PlaReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(stream);
         if (!stream.CanRead || !stream.CanSeek)
@@ -134,6 +147,10 @@ public sealed class PlaDocument : IDisposable
                 // therefore grows with the size of the file. A preceding block that does not decode is a scanner
                 // false positive and not part of the real stream, so it is skipped.
                 var window = GlobalStreamDecoder.DecodePrefix(this, block, _options.MaxGlobalStreamBytes);
+                // The cap is a property of the whole window and the requested block is part of it, so the check runs
+                // before the block's buffer is allocated.
+                if (window.Count + block.UnpackedSize > _options.MaxGlobalStreamBytes)
+                    throw new InvalidDataException($"The decoded global stream would grow past {_options.MaxGlobalStreamBytes} bytes (the reader's cap) at the block at 0x{block.Offset:x}.");
                 return ReadLzPayload(block, window, out _, out consumed);
             }
             default:

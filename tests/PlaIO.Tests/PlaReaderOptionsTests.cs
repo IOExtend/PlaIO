@@ -20,11 +20,24 @@ public class PlaReaderOptionsTests
     {
         var bytes = Synthetic.Fdb(Synthetic.Block(PlaBlockMode.Raw, "ABCD"u8.ToArray()));
         using var document = PlaDocument.Open(new MemoryStream(bytes),
-            options: new PlaReaderOptions { MaxGlobalStreamBytes = 3 });
+            leaveOpen: false, options: new PlaReaderOptions { MaxGlobalStreamBytes = 3 });
 
         // The cap is a property of the global window: a single payload read stays under the scanner's own limits.
         Assert.Equal("ABCD"u8.ToArray(), document.ReadPayload(document.Blocks[0]));
         var e = Assert.Throws<InvalidDataException>(() => document.OpenStream());
+        Assert.Contains("cap", e.Message);
+    }
+
+    [Fact]
+    public void ALzBlockItselfCountsAgainstTheGlobalStreamCap()
+    {
+        // A mode-2 block with four literal bytes of output and an empty prefix window.
+        var lz = Synthetic.Concat([0x40], "wxyz"u8.ToArray(), [0xFF, 0xFE]);
+        var bytes = Synthetic.Fdb(Synthetic.Block(PlaBlockMode.Lz, lz, unpacked: 4));
+        using var document = PlaDocument.Open(new MemoryStream(bytes),
+            leaveOpen: false, options: new PlaReaderOptions { MaxGlobalStreamBytes = 3 });
+
+        var e = Assert.Throws<InvalidDataException>(() => document.ReadPayload(document.Blocks[0]));
         Assert.Contains("cap", e.Message);
     }
 
@@ -35,7 +48,7 @@ public class PlaReaderOptionsTests
             Synthetic.Block(PlaBlockMode.Raw, "AB"u8.ToArray()),
             Synthetic.Block(PlaBlockMode.Raw, "CD"u8.ToArray()));
         using var document = PlaDocument.Open(new MemoryStream(bytes),
-            options: new PlaReaderOptions { MaxGlobalStreamBytes = 4 });
+            leaveOpen: false, options: new PlaReaderOptions { MaxGlobalStreamBytes = 4 });
 
         Assert.Equal(4, document.OpenStream().Length);
     }
@@ -46,7 +59,7 @@ public class PlaReaderOptionsTests
         var bytes = Synthetic.Fdb(Synthetic.QuickLzPool(
             (3, Synthetic.QuickLzFrame([1, 2, 3], 3, flags: 0x44))));
         using var document = PlaDocument.Open(new MemoryStream(bytes),
-            options: new PlaReaderOptions { MaxDecodedPoolBytes = 2 });
+            leaveOpen: false, options: new PlaReaderOptions { MaxDecodedPoolBytes = 2 });
 
         var pool = Assert.Single(document.FindCompressedPools());
         Assert.Equal(3, pool.TotalDecompressed);

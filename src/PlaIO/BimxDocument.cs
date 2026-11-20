@@ -34,7 +34,12 @@ public sealed class BimxDocument : IDisposable
 
     /// <summary>Opens the file at <paramref name="path"/> for reading.</summary>
     /// <exception cref="InvalidDataException">The file is not a .bimx file or its cover image is cut short.</exception>
-    public static BimxDocument Open(string path, PlaReaderOptions? options = null)
+    public static BimxDocument Open(string path)
+        => Open(path, options: null);
+
+    /// <summary>Opens the file at <paramref name="path"/> for reading with explicit reader options.</summary>
+    /// <exception cref="InvalidDataException">The file is not a .bimx file or its cover image is cut short.</exception>
+    public static BimxDocument Open(string path, PlaReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(path);
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.RandomAccess);
@@ -54,7 +59,15 @@ public sealed class BimxDocument : IDisposable
     /// the caller.</summary>
     /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
     /// <exception cref="InvalidDataException">The data is not a .bimx file or its cover image is cut short.</exception>
-    public static BimxDocument Open(Stream stream, bool leaveOpen = false, PlaReaderOptions? options = null)
+    public static BimxDocument Open(Stream stream, bool leaveOpen = false)
+        => Open(stream, leaveOpen, options: null);
+
+    /// <summary>Opens a .bimx file from a readable, seekable stream with explicit reader options and measures the cover
+    /// image without reading it. The document owns the stream unless <paramref name="leaveOpen"/> is true; when this
+    /// method throws, the stream stays with the caller.</summary>
+    /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
+    /// <exception cref="InvalidDataException">The data is not a .bimx file or its cover image is cut short.</exception>
+    public static BimxDocument Open(Stream stream, bool leaveOpen, PlaReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(stream);
         if (!stream.CanRead || !stream.CanSeek)

@@ -24,14 +24,17 @@ in `PlaIO.Internal`; it can change in any release and is visible only to the tes
 | `PlaReaderOptions.MaxDecodedPoolBytes` | Cap on the decoded size of one compressed pool (default: 512 MiB). A pool that declares more makes `Decode` throw `InvalidDataException`. |
 | `PlaReaderOptions.MaxCoverBytes` | Cap on the `.bimx` cover image read into memory (default: 64 MiB). A larger cover makes `ReadCover` throw `InvalidDataException`. |
 
-The caps are reader limits, not facts of the format. `PlaDocument.Open`, `BimxDocument.Open` and their stream
-overloads take the options as an optional last parameter.
+The caps are reader limits, not facts of the format. The options are immutable — build a new instance to change a
+limit; `Default` cannot be mutated, so one reader never changes the limits of another. The entry-point signatures of
+the 0.1.0 surface are unchanged: the options come through added overloads (`Open(string, PlaReaderOptions?)` and
+`Open(Stream, bool, PlaReaderOptions?)`; the same for `BimxDocument`).
 
 ## FDB container (`.pla`, `.pln`)
 
 | Member | Use |
 |---|---|
-| `PlaDocument.Open(string path, PlaReaderOptions? options = null)`, `PlaDocument.Open(Stream stream, bool leaveOpen = false, PlaReaderOptions? options = null)` | Opens a container and builds its block index. The stream must be readable and seekable (`ArgumentException` otherwise); data that is not an FDB container or is shorter than 32 bytes throws `InvalidDataException`. The document owns the stream unless `leaveOpen` is true; when `Open` throws, the stream stays with the caller. |
+| `PlaDocument.Open(string path)`, `PlaDocument.Open(Stream stream, bool leaveOpen = false)` | Opens a container and builds its block index. The stream must be readable and seekable (`ArgumentException` otherwise); data that is not an FDB container or is shorter than 32 bytes throws `InvalidDataException`. The document owns the stream unless `leaveOpen` is true; when `Open` throws, the stream stays with the caller. |
+| `PlaDocument.Open(string path, PlaReaderOptions? options)`, `PlaDocument.Open(Stream stream, bool leaveOpen, PlaReaderOptions? options)` | The same opens with explicit reader options. |
 | `PlaDocument.Length` | Length of the file in bytes. |
 | `PlaDocument.Header` | The `FdbHeader`. |
 | `PlaDocument.Blocks` | The block index in file order, found by scanning from offset 32. No on-disk block map is known, so completeness is not claimed. The scan can take a byte run for a block header, so the index may contain false entries. In real files a small share of mode 1 blocks does not decode to its declared size, and `ReadPayload` throws `InvalidDataException` for them. |
@@ -81,7 +84,8 @@ Offsets are relative to the decoded pool. The scanner retries an unmatched BL ca
 
 | Member | Use |
 |---|---|
-| `BimxDocument.Open(string path, PlaReaderOptions? options = null)`, `BimxDocument.Open(Stream stream, bool leaveOpen = false, PlaReaderOptions? options = null)` | Opens a `.bimx` file and measures its cover image without reading it. Same exceptions as `PlaDocument.Open`; a cover cut short also throws `InvalidDataException`. |
+| `BimxDocument.Open(string path)`, `BimxDocument.Open(Stream stream, bool leaveOpen = false)` | Opens a `.bimx` file and measures its cover image without reading it. Same exceptions as `PlaDocument.Open`; a cover cut short also throws `InvalidDataException`. |
+| `BimxDocument.Open(string path, PlaReaderOptions? options)`, `BimxDocument.Open(Stream stream, bool leaveOpen, PlaReaderOptions? options)` | The same opens with explicit reader options. |
 | `BimxDocument.Length` | Length of the file in bytes. |
 | `BimxDocument.CoverOffset` | Offset of the PNG cover image: always 4, right after the signature. |
 | `BimxDocument.CoverLength` | Length of the cover, from the PNG signature through the IEND chunk and its CRC. |
