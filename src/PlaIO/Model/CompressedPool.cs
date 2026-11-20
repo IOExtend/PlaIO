@@ -1,6 +1,7 @@
+using PlaIO;
 using PlaIO.Internal;
 
-namespace PlaIO;
+namespace PlaIO.Model;
 
 /// <summary>A pool of QuickLZ frames stored between indexed FDB block payloads.</summary>
 public sealed class CompressedPool

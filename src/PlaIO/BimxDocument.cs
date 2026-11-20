@@ -35,12 +35,17 @@ public sealed class BimxDocument : IDisposable
     /// <summary>Opens the file at <paramref name="path"/> for reading.</summary>
     /// <exception cref="InvalidDataException">The file is not a .bimx file or its cover image is cut short.</exception>
     public static BimxDocument Open(string path)
+        => Open(path, options: null);
+
+    /// <summary>Opens the file at <paramref name="path"/> for reading with explicit reader options.</summary>
+    /// <exception cref="InvalidDataException">The file is not a .bimx file or its cover image is cut short.</exception>
+    public static BimxDocument Open(string path, PlaReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(path);
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.RandomAccess);
         try
         {
-            return Open(stream, leaveOpen: false);
+            return Open(stream, leaveOpen: false, options);
         }
         catch
         {
@@ -54,13 +59,20 @@ public sealed class BimxDocument : IDisposable
     /// the caller.</summary>
     /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
     /// <exception cref="InvalidDataException">The data is not a .bimx file or its cover image is cut short.</exception>
-    public static BimxDocument Open(Stream stream, bool leaveOpen = false) => Open(stream, leaveOpen, FdbFormat.MaxCoverLength);
+    public static BimxDocument Open(Stream stream, bool leaveOpen = false)
+        => Open(stream, leaveOpen, options: null);
 
-    internal static BimxDocument Open(Stream stream, bool leaveOpen, long maxCoverLength)
+    /// <summary>Opens a .bimx file from a readable, seekable stream with explicit reader options and measures the cover
+    /// image without reading it. The document owns the stream unless <paramref name="leaveOpen"/> is true; when this
+    /// method throws, the stream stays with the caller.</summary>
+    /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
+    /// <exception cref="InvalidDataException">The data is not a .bimx file or its cover image is cut short.</exception>
+    public static BimxDocument Open(Stream stream, bool leaveOpen, PlaReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(stream);
         if (!stream.CanRead || !stream.CanSeek)
             throw new ArgumentException("The stream must be readable and seekable.", nameof(stream));
+        options ??= PlaReaderOptions.Default;
 
         long length = stream.Length;
         var head = new byte[Math.Min(PlaFile.SignatureLength, length)];
@@ -70,7 +82,7 @@ public sealed class BimxDocument : IDisposable
             throw new InvalidDataException($"Not a BIMx file (detected kind: {kind}).");
 
         long coverLength = PngChunks.Measure(stream, 4, length);
-        return new BimxDocument(stream, leaveOpen, length, coverLength, maxCoverLength);
+        return new BimxDocument(stream, leaveOpen, length, coverLength, options.MaxCoverBytes);
     }
 
     /// <summary>The PNG cover image.</summary>

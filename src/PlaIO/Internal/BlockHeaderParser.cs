@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Diagnostics.CodeAnalysis;
+using PlaIO.Model;
 
 namespace PlaIO.Internal;
 

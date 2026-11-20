@@ -1,3 +1,4 @@
+using PlaIO.Model;
 using Xunit;
 
 namespace PlaIO.Tests;

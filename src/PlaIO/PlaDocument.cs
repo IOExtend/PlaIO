@@ -1,4 +1,5 @@
 using PlaIO.Internal;
+using PlaIO.Model;
 
 namespace PlaIO;
 
@@ -11,9 +12,10 @@ public sealed class PlaDocument : IDisposable
     private readonly Stream _stream;
     private readonly bool _leaveOpen;
     private readonly List<PlaBlock> _blocks;
+    private readonly PlaReaderOptions _options;
     private bool _disposed;
 
-    private PlaDocument(Stream stream, bool leaveOpen, long length, FdbHeader header, List<PlaBlock> blocks)
+    private PlaDocument(Stream stream, bool leaveOpen, long length, FdbHeader header, List<PlaBlock> blocks, PlaReaderOptions options)
     {
         _stream = stream;
         _leaveOpen = leaveOpen;
@@ -21,6 +23,7 @@ public sealed class PlaDocument : IDisposable
         Header = header;
         _blocks = blocks;
         Blocks = blocks.AsReadOnly();
+        _options = options;
     }
 
     /// <summary>Length of the file in bytes.</summary>
@@ -29,7 +32,7 @@ public sealed class PlaDocument : IDisposable
     /// <summary>The container header.</summary>
     public FdbHeader Header { get; }
 
-    /// <summary>The block index, in file order, built once by <see cref="Open(Stream, bool)"/>. No on-disk block map is
+    /// <summary>The block index, in file order, built once by <see cref="Open(Stream, bool, PlaReaderOptions)"/>. No on-disk block map is
     /// known, so the index is found by scanning (from offset 32, one byte at a time, skipping accepted payloads) and makes no
     /// claim of completeness. The scan can take a byte run for a block header, so the index may contain false entries, and
     /// in real files a small share of mode 1 blocks does not decode to its declared size.</summary>
@@ -38,12 +41,17 @@ public sealed class PlaDocument : IDisposable
     /// <summary>Opens the file at <paramref name="path"/> for reading.</summary>
     /// <exception cref="InvalidDataException">The file is not an FDB container or is cut short.</exception>
     public static PlaDocument Open(string path)
+        => Open(path, options: null);
+
+    /// <summary>Opens the file at <paramref name="path"/> for reading with explicit reader options.</summary>
+    /// <exception cref="InvalidDataException">The file is not an FDB container or is cut short.</exception>
+    public static PlaDocument Open(string path, PlaReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(path);
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.RandomAccess);
         try
         {
-            return Open(stream, leaveOpen: false);
+            return Open(stream, leaveOpen: false, options);
         }
         catch
         {
@@ -57,10 +65,19 @@ public sealed class PlaDocument : IDisposable
     /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
     /// <exception cref="InvalidDataException">The data is not an FDB container or is cut short.</exception>
     public static PlaDocument Open(Stream stream, bool leaveOpen = false)
+        => Open(stream, leaveOpen, options: null);
+
+    /// <summary>Opens a container from a readable, seekable stream with explicit reader options. The document owns
+    /// the stream unless <paramref name="leaveOpen"/> is true; when this method throws, the stream stays with the
+    /// caller.</summary>
+    /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
+    /// <exception cref="InvalidDataException">The data is not an FDB container or is cut short.</exception>
+    public static PlaDocument Open(Stream stream, bool leaveOpen, PlaReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(stream);
         if (!stream.CanRead || !stream.CanSeek)
             throw new ArgumentException("The stream must be readable and seekable.", nameof(stream));
+        options ??= PlaReaderOptions.Default;
 
         long length = stream.Length;
         if (length < FdbFormat.FirstBlockOffset)
@@ -72,7 +89,7 @@ public sealed class PlaDocument : IDisposable
             throw new InvalidDataException($"Not an FDB container (detected kind: {kind}).");
 
         var blocks = new BlockScanner(stream, length).Scan();
-        return new PlaDocument(stream, leaveOpen, length, new FdbHeader(raw), blocks);
+        return new PlaDocument(stream, leaveOpen, length, new FdbHeader(raw), blocks, options);
     }
 
     /// <summary>The decoded payload of a block of this document.</summary>
@@ -129,29 +146,12 @@ public sealed class PlaDocument : IDisposable
                 // file is decoded from the start and the requested block's output is returned. The cost of a call
                 // therefore grows with the size of the file. A preceding block that does not decode is a scanner
                 // false positive and not part of the real stream, so it is skipped.
-                var window = new List<byte>();
-                foreach (var b in _blocks)
-                {
-                    if (ReferenceEquals(b, block)) break;
-                    TryAppendToWindow(b, window);
-                }
-                var blockPayload = new byte[block.PackedSize];
-                StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, blockPayload, $"the payload of the block at 0x{block.Offset:x}");
-                // Mode 2 (LZ): the token stream produces the declared unpacked size (some blocks declare a buffer
-                // larger than the stream produces — the tail of the buffer stays zero) and may reference the window;
-                // the body tail after the output is complete is writer slack.
-                var output = new byte[block.UnpackedSize];
-                int lzConsumed;
-                try
-                {
-                    lzConsumed = LzPayloadDecoder.Decode(blockPayload, output, window, block.Offset, out _);
-                }
-                catch (InvalidDataException e)
-                {
-                    throw new InvalidDataException($"Block at 0x{block.Offset:x}: {e.Message}", e);
-                }
-                consumed = lzConsumed;
-                return output;
+                var window = GlobalStreamDecoder.DecodePrefix(this, block, _options.MaxGlobalStreamBytes);
+                // The cap is a property of the whole window and the requested block is part of it, so the check runs
+                // before the block's buffer is allocated.
+                if (window.Count + block.UnpackedSize > _options.MaxGlobalStreamBytes)
+                    throw new InvalidDataException($"The decoded global stream would grow past {_options.MaxGlobalStreamBytes} bytes (the reader's cap) at the block at 0x{block.Offset:x}.");
+                return ReadLzPayload(block, window, out _, out consumed);
             }
             default:
                 throw new NotSupportedException($"Block at 0x{block.Offset:x} uses an unknown payload mode {block.Mode}.");
@@ -164,66 +164,35 @@ public sealed class PlaDocument : IDisposable
     /// lifetime. Object directory records address the stream by position and count.</summary>
     public PlaStream OpenStream()
     {
-        var window = DecodeGlobalWindow(out var skipped);
-        return new PlaStream(window, skipped.Count == 0 ? null : skipped[0].WindowPosition);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var window = GlobalStreamDecoder.DecodeAll(this, _options.MaxGlobalStreamBytes, out var skipped);
+        return new PlaStream(window, skipped);
     }
 
-    /// <summary>Appends the decoded payload of one block to the mode-2 global window, or leaves the window unchanged when
-    /// the block does not decode to its declared size (a false entry of the scan is not part of the real stream, so a
-    /// partial decode is rolled back). Returns whether the block was appended.</summary>
-    private bool TryAppendToWindow(PlaBlock b, List<byte> window)
-    {
-        int before = window.Count;
-        try
-        {
-            AppendToWindow(b, window);
-            return true;
-        }
-        catch (InvalidDataException)
-        {
-            window.RemoveRange(before, window.Count - before);
-            return false;
-        }
-    }
-
-    /// <summary>Decodes the whole file once into the global window: the raw payloads, the full zero-mask decodes and the
-    /// mode-2 outputs, in block order. Blocks that do not decode to their declared size (false entries of the scan) are
-    /// skipped and reported in <paramref name="skipped"/> with the window offset each would have contributed; the window
-    /// stays as if they were not there.</summary>
-    internal List<byte> DecodeGlobalWindow(out IReadOnlyList<(PlaBlock Block, long WindowPosition)> skipped)
+    /// <summary>Reads the packed payload of a mode-2 block and decodes it against <paramref name="window"/>, the decoded
+    /// output of every preceding block, which the token stream's back-references reach into. Returns the declared
+    /// unpacked buffer — the produced bytes at its head and a zero tail when the stream produces less than declared (the
+    /// writer reserved a buffer larger than its output); <paramref name="produced"/> receives the produced count and
+    /// <paramref name="consumed"/> the body bytes the stream consumed.</summary>
+    /// <exception cref="InvalidDataException">The token stream does not decode.</exception>
+    internal byte[] ReadLzPayload(PlaBlock block, List<byte> window, out int produced, out int consumed)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var window = new List<byte>();
-        var failed = new List<(PlaBlock, long)>();
-        foreach (var b in _blocks)
-        {
-            int before = window.Count;
-            if (!TryAppendToWindow(b, window)) failed.Add((b, before));
-        }
-        skipped = failed.AsReadOnly();
-        return window;
-    }
-
-    /// <summary>Appends the decoded payload of one block to the mode-2 global window. Raw payloads are copied as they
-    /// are; a zero-mask payload contributes its full decode; a mode 2 payload is decoded and the decoder appends every
-    /// produced byte. Throws <see cref="InvalidDataException"/> when the block does not decode to its declared size.</summary>
-    private void AppendToWindow(PlaBlock b, List<byte> window)
-    {
-        if (b.Mode != PlaBlockMode.Lz)
-        {
-            window.AddRange(ReadPayload(b));
-            return;
-        }
-
-        var payload = new byte[b.PackedSize];
-        StreamReads.ReadExactlyAt(_stream, b.PayloadOffset, payload, $"the payload of the block at 0x{b.Offset:x}");
+        var payload = new byte[block.PackedSize];
+        StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, payload, $"the payload of the block at 0x{block.Offset:x}");
         // Mode 2 (LZ): the token stream produces the declared unpacked size (some blocks declare a buffer
-        // larger than the stream produces — the tail of the buffer stays zero) and the decoder appends every
-        // produced byte to the window; the body tail after the output is complete is writer slack.
-        var output = new byte[b.UnpackedSize];
-        int produced;
-        LzPayloadDecoder.Decode(payload, output, window, b.Offset, out produced);
-        for (long i = produced; i < b.UnpackedSize; i++) window.Add(0); // the directory addresses the buffer space
+        // larger than the stream produces — the tail of the buffer stays zero) and may reference the window;
+        // the body tail after the output is complete is writer slack.
+        var output = new byte[block.UnpackedSize];
+        try
+        {
+            consumed = LzPayloadDecoder.Decode(payload, output, window, block.Offset, out produced);
+        }
+        catch (InvalidDataException e)
+        {
+            throw new InvalidDataException($"Block at 0x{block.Offset:x}: {e.Message}", e);
+        }
+        return output;
     }
 
     /// <summary>Searches every raw block large enough for 64 records for an object directory (at most one per block).
@@ -253,7 +222,7 @@ public sealed class PlaDocument : IDisposable
     internal byte[] DecodePool(long offset)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return PoolReader.Decode(_stream, Length, offset);
+        return PoolReader.Decode(_stream, Length, offset, _options.MaxDecodedPoolBytes);
     }
 
     /// <summary>Releases the stream unless the document was opened with leaveOpen.</summary>

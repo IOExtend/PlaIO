@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PlaIO.CommandLine;
+using PlaIO.Model;
 using Xunit;
 
 namespace PlaIO.Tests;

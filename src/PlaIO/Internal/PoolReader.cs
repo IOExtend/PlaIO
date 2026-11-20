@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using PlaIO.Model;
 
 namespace PlaIO.Internal;
 
@@ -63,9 +64,11 @@ internal static class PoolReader
         return pos;
     }
 
-    public static byte[] Decode(Stream stream, long length, long offset)
+    public static byte[] Decode(Stream stream, long length, long offset, long maxDecodedBytes)
     {
         var (range, frames) = ReadLayout(stream, length, offset);
+        if (range.UnpackedSize > maxDecodedBytes)
+            throw InvalidPool(offset, $"the pool decodes to {range.UnpackedSize} bytes, past the reader's cap of {maxDecodedBytes}");
         byte[] decoded = new byte[range.UnpackedSize];
         int written = 0;
         foreach (var frame in frames)

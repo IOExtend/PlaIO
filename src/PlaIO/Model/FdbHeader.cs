@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace PlaIO;
+namespace PlaIO.Model;
 
 /// <summary>The 64-byte header of an FDB container. Bytes 0..31 are fixed; bytes 32..63 overlap the first block and their
 /// meaning is not documented, so they are only kept raw.</summary>
