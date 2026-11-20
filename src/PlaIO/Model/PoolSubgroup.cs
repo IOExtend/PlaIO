@@ -33,7 +33,7 @@ public sealed class PoolSubgroup
     /// <summary>The object GUID when present in the header.</summary>
     public Guid? ObjectId { get; }
 
-    /// <summary>The decoded payload. Mode 2 returns empty data pending a supported decoder.</summary>
+    /// <summary>The decoded payload. Mode 2 returns empty data when its stream cannot be decoded.</summary>
     public byte[] Data { get; }
 
     /// <summary>True when decoding is unavailable or the zero-mask stream ends inside a literal group.

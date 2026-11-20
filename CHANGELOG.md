@@ -48,6 +48,16 @@ API between minor releases.
 - `PlaStream.SkippedBlocks`: the indexed blocks that failed to decode to their declared size (false entries of the
   scan), in file order — the blocks behind `UnreliableFrom`.
 
+- `CompressedPool.ReadSubgroups()` decodes mode-2 pool subgroups. A mode-2 payload is an LZ token stream like a
+  mode-2 block payload; it may start with a 13-byte pool header (a u32, the 0x47 marker, the packed payload length
+  and the unpacked size) or with the file block's 9-byte stream header. Its back-references reach into the pool
+  stream — the reconstruction of every preceding pool of the document and of this pool before the record — so a read
+  decodes the pools before the named one; reading the pools in file order advances one shared window, so every pool
+  decodes once. A skipped pool or an undecodable mode-2 subgroup resets the history. A mode-2 payload that cannot
+  decode is reported with empty data and `Partial`. The decoder discards history beyond the maximum back-reference
+  distance between records. `FindCompressedPools` caches its list after the first scan, so the pool objects stay
+  identical between calls.
+
 ### Changed
 
 - The core library follows the IOExtend reference layout (RvtIO, NwcIO): the entry points (`PlaDocument`,

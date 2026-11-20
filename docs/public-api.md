@@ -62,7 +62,7 @@ independent decoding of saved-file frames verified the correspondence. PlaIO has
 
 | Member | Use |
 |---|---|
-| `PlaDocument.FindCompressedPools()` | Finds pool markers outside indexed block payloads and validates frame headers and sizes. Computed on each call. |
+| `PlaDocument.FindCompressedPools()` | Finds pool markers outside indexed block payloads and validates frame headers and sizes. The first call scans the file; later calls return the cached list, so the pool objects stay identical. |
 | `CompressedPool.Offset` and `End` | File offsets of the pool marker and of the end of the pool. |
 | `CompressedPool.TotalDecompressed` and `BlockCount` | Decoded byte count and number of frames in the pool. |
 | `CompressedPool.Decode()` | Decoded frame payloads in order. Throws `InvalidDataException` on invalid framing or data (a pool past `PlaReaderOptions.MaxDecodedPoolBytes` included) and `ObjectDisposedException` after disposing the document. |
@@ -70,15 +70,23 @@ independent decoding of saved-file frames verified the correspondence. PlaIO has
 ### Pool subgroups
 
 The subgroup header uses the FDB size field widths and may carry a GUID. It does not contain the file-level extra field.
-Offsets are relative to the decoded pool. The scanner retries an unmatched BL candidate at the next byte.
+Offsets are relative to the decoded pool. The scanner retries an unmatched BL candidate at the next byte. A mode-2
+payload is an LZ token stream like a mode-2 block payload: it may start with a 13-byte pool header (a u32, the 0x47
+marker, the packed payload length and the unpacked size) or with the file block's 9-byte stream header, and its
+back-references reach into the pool stream — the reconstruction of every preceding pool of the document and of this
+pool before the record — so a read decodes the pools before the named one. Reading the pools in file order advances
+one shared window, so every pool decodes once. A read that names an earlier pool rebuilds the window. A skipped
+pool or an undecodable mode-2 subgroup resets the history. A reference into missing history returns empty data
+with `Partial` set. Subgroups can continue to reference bytes decoded after the gap. A back-reference distance is a
+u16, so the decoder can discard older history between records.
 
 | Member | Use |
 |---|---|
-| `CompressedPool.ReadSubgroups()` | Decodes the pool and returns the recognised BL-tagged records in pool order. |
+| `CompressedPool.ReadSubgroups()` | Decodes the pool and returns the recognised BL-tagged records in pool order, with mode-2 payloads decoded against the pool stream. |
 | `PoolSubgroup.Offset` | Start of the subgroup header in the decoded pool. |
 | `PoolSubgroup.Kind`, `Version`, `Flags` and `ObjectId` | Raw header metadata and the optional GUID. |
-| `PoolSubgroup.Mode` and `Data` | Raw or zero-mask payload bytes. Mode 2 is reported with empty data. |
-| `PoolSubgroup.Partial` | True for unavailable mode 2 data or an incomplete zero-mask literal. A zero-mask stream ending at a group boundary can leave valid zero padding. |
+| `PoolSubgroup.Mode` and `Data` | The payload bytes: raw as they are, zero-mask and mode-2 as their decoded output. A mode-2 payload that does not decode is reported with empty data and `Partial`. |
+| `PoolSubgroup.Partial` | True for a mode-2 payload that does not decode (or produces less than declared) or an incomplete zero-mask literal. A zero-mask stream ending at a group boundary can leave valid zero padding. |
 
 ## BIMx file (`.bimx`)
 
