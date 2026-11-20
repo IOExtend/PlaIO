@@ -229,6 +229,46 @@ public sealed class PlaDocument : IDisposable
         return PoolReader.Decode(_stream, Length, offset, _options.MaxDecodedPoolBytes);
     }
 
+    /// <summary>The window that <see cref="Model.PoolSubgroup"/> decoding builds while the pools are read in order:
+    /// the tail of the pool-stream reconstruction up to the pool with index <see cref="_poolWindowThrough"/> (that
+    /// pool excluded). Reading the pools in file order advances the window, so every pool decodes once; a read that
+    /// names an earlier pool rebuilds the window from the start.</summary>
+    private List<byte>? _poolWindow;
+    private int _poolWindowThrough;
+
+    /// <summary>Reads the subgroups of one pool of this document, decoding the pool stream up to it (see
+    /// <see cref="Model.CompressedPool.ReadSubgroups"/>). A preceding pool that fails to decode is skipped: the
+    /// window continues without it, and the subgroups of the named pool are still read.</summary>
+    internal IReadOnlyList<PoolSubgroup> ReadPoolSubgroups(CompressedPool pool)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var pools = FindCompressedPools();
+        int target = 0;
+        while (target < pools.Count && !ReferenceEquals(pools[target], pool)) target++;
+        if (target == pools.Count)
+            throw new ArgumentException("The pool is not one of the compressed pools of this document.", nameof(pool));
+
+        if (_poolWindow is null || target < _poolWindowThrough)
+        {
+            _poolWindow = new List<byte>();
+            _poolWindowThrough = 0;
+        }
+        for (int index = _poolWindowThrough; index < target; index++)
+        {
+            try
+            {
+                PoolSubgroupReader.ReadPool(pools[index].Decode(), _poolWindow);
+            }
+            catch (InvalidDataException)
+            {
+                // A pool that does not decode is skipped; the window continues without it.
+            }
+        }
+        var subgroups = PoolSubgroupReader.ReadPool(pools[target].Decode(), _poolWindow);
+        _poolWindowThrough = target + 1;
+        return subgroups;
+    }
+
     /// <summary>Releases the stream unless the document was opened with leaveOpen.</summary>
     public void Dispose()
     {

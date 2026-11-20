@@ -56,9 +56,10 @@ public class PoolSubgroupTests
         // header followed by the payload, so "ABCD" starts at offset 13 of the window.
         byte[] first = Synthetic.Block(PlaBlockMode.Raw, "ABCDEFGH"u8.ToArray());
         // Pool 2: one mode-2 subgroup. Its payload starts with the pool header [u32][0x47][u32 packed][u32 unpacked]
-        // and the token stream emits the literals XY, then a match of length 4 at distance 10: the window ends two
-        // bytes past the 21-byte reconstruction of pool 1, and 23 - 13 = 10 reaches "ABCD".
-        byte[] tokens = [0x20, (byte)'X', (byte)'Y', 0x00, 0x0A, 0x04];
+        // and the token stream emits the literals XY, then a match of length 4. The subgroup's own 17-byte header is
+        // already part of the window when its stream decodes, so the window ends at 21 + 17 + 2 = 40 and the distance
+        // 40 - 13 = 27 reaches "ABCD" of pool 1.
+        byte[] tokens = [0x20, (byte)'X', (byte)'Y', 0x00, 0x1B, 0x04];
         byte[] payload = PoolLzPayload(tokens, unpacked: 6);
         byte[] second = Synthetic.Block(PlaBlockMode.Lz, payload, unpacked: 6);
         using var doc = OpenPools(first, second);
@@ -67,6 +68,74 @@ public class PoolSubgroupTests
         Assert.Equal(PlaBlockMode.Lz, record.Mode);
         Assert.Equal("XYABCD"u8.ToArray(), record.Data);
         Assert.False(record.Partial);
+    }
+
+    [Fact]
+    public void ALaterLzSubgroupMatchesTheDecodedOutputOfAnEarlierOneExactlyOnce()
+    {
+        // Pool 1: raw "ABCDEFGH" (13-byte header + 8 payload = 21 bytes of window).
+        byte[] first = Synthetic.Block(PlaBlockMode.Raw, "ABCDEFGH"u8.ToArray());
+        // Pool 2, subgroup 1: mode 2 emitting the literals WXYZ. Its 17-byte header plus the 4 produced bytes end
+        // the window at 21 + 17 + 4 = 42, with WXYZ at 38..41.
+        byte[] firstTokens = [0x40, (byte)'W', (byte)'X', (byte)'Y', (byte)'Z'];
+        byte[] firstLz = Synthetic.Block(PlaBlockMode.Lz, PoolLzPayload(firstTokens, unpacked: 4), unpacked: 4);
+        // Pool 2, subgroup 2: mode 2 matching length 4. The window at its match is 42 bytes of content plus the
+        // subgroup's own 17-byte header (the header joins the window before the stream decodes), so the distance
+        // 59 - 38 = 21 lands on WXYZ only when the output of subgroup 1 entered the window exactly once. A
+        // duplicated contribution shifts the distance onto other bytes, and the match returns wrong data while
+        // still reporting a complete decode.
+        byte[] secondTokens = [0x00, 0x00, 0x15, 0x04];
+        byte[] secondLz = Synthetic.Block(PlaBlockMode.Lz, PoolLzPayload(secondTokens, unpacked: 4), unpacked: 4);
+        using var doc = OpenPools(first, Synthetic.Concat(firstLz, secondLz));
+
+        var records = doc.FindCompressedPools()[1].ReadSubgroups();
+        Assert.Equal(2, records.Count);
+        Assert.Equal("WXYZ"u8.ToArray(), records[0].Data);
+        Assert.Equal("WXYZ"u8.ToArray(), records[1].Data);
+        Assert.False(records[1].Partial);
+    }
+
+    [Fact]
+    public void ATruncatedZeroMaskSubgroupContributesItsRawBytesToTheWindow()
+    {
+        // Pool 1: raw "ABCD" (13 + 4 = 17 bytes of window, "ABCD" at 13..16).
+        byte[] first = Synthetic.Block(PlaBlockMode.Raw, "ABCD"u8.ToArray());
+        // Pool 2, subgroup 1: a zero-mask subgroup whose single mask byte 0x80 starts a literal that the payload
+        // never delivers — the decode reports partial and the window takes the one raw payload byte, not the
+        // zero-filled remainder of the declared buffer.
+        byte[] truncated = Synthetic.Block(PlaBlockMode.ZeroMask, [0x80], unpacked: 8);
+        // Pool 2, subgroup 2: a match of length 4 at distance 52 - 13 = 39 (35 bytes of content plus the
+        // subgroup's own 17-byte header), which reaches "ABCD" of pool 1 only when the truncated subgroup
+        // contributed its 1 raw byte (17 + 17 + 1 = 35); a zero-filled contribution of 8 bytes shifts the
+        // distance onto zeros.
+        byte[] tokens = [0x00, 0x00, 0x27, 0x04];
+        byte[] match = Synthetic.Block(PlaBlockMode.Lz, PoolLzPayload(tokens, unpacked: 4), unpacked: 4);
+        using var doc = OpenPools(first, Synthetic.Concat(truncated, match));
+
+        var records = doc.FindCompressedPools()[1].ReadSubgroups();
+        Assert.Equal(2, records.Count);
+        Assert.True(records[0].Partial);
+        Assert.Equal("ABCD"u8.ToArray(), records[1].Data);
+        Assert.False(records[1].Partial);
+    }
+
+    [Fact]
+    public void APoolThatDoesNotDecodeDoesNotBlockLaterPools()
+    {
+        // Pool 1: structurally valid framing whose compressed frame fails inside the QuickLZ decode, so the pool is
+        // found but does not decode. Pool 2 is a plain raw pool and must still be readable.
+        byte[] brokenFrameBody = [0x01, 0x00, 0x00, 0x80, 0xF1, 0xFF]; // control word with a match at an unregistered slot
+        byte[] brokenPool = Synthetic.QuickLzPool((8, Synthetic.QuickLzFrame(brokenFrameBody, 8, flags: 0x45)));
+        byte[] goodContent = Synthetic.Block(PlaBlockMode.Raw, "sample"u8.ToArray());
+        byte[] goodPool = Synthetic.QuickLzPool(
+            ((uint)goodContent.Length, Synthetic.QuickLzFrame(goodContent, goodContent.Length, flags: 0x46)));
+        using var doc = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(brokenPool, goodPool)));
+
+        var pools = doc.FindCompressedPools();
+        Assert.Equal(2, pools.Count);
+        Assert.Throws<InvalidDataException>(() => pools[0].ReadSubgroups());
+        var record = Assert.Single(pools[1].ReadSubgroups());
+        Assert.Equal("sample"u8.ToArray(), record.Data);
     }
 
     [Fact]

@@ -6,30 +6,19 @@ namespace PlaIO.Internal;
 /// <summary>Reads the BL-tagged records of one decoded pool. A mode-2 payload is an LZ token stream like a mode-2
 /// block payload; its back-references reach into the pool stream — the reconstruction of every preceding pool of the
 /// document (each subgroup's header, raw payloads as they are, zero-mask and mode-2 payloads as their full decodes,
-/// concatenated in pool order), followed by the requested pool's own reconstruction so far. The pools are therefore
-/// decoded in order until the requested one, and the cost of a read grows with the file. The window keeps only its
-/// tail: a back-reference distance is a u16, so nothing reaches further back than
-/// <see cref="WindowTail"/> bytes and the memory stays constant in the size of the file.</summary>
+/// concatenated in pool order), followed by this pool's own reconstruction so far. The window keeps only its tail: a
+/// back-reference distance is a u16, so nothing reaches further back than <see cref="WindowTail"/> bytes and the
+/// memory stays constant in the size of the file.</summary>
 internal static class PoolSubgroupReader
 {
     /// <summary>The window tail kept for back-references: the largest distance the format can name.</summary>
     private const int WindowTail = 1 << 16;
 
-    public static IReadOnlyList<PoolSubgroup> Read(PlaDocument document, CompressedPool through)
-    {
-        var window = new List<byte>();
-        foreach (var pool in document.FindCompressedPools())
-        {
-            var subgroups = ReadPool(pool.Decode(), window);
-            if (ReferenceEquals(pool, through)) return subgroups;
-        }
-        throw new ArgumentException("The pool is not one of the compressed pools of this document.", nameof(through));
-    }
-
     /// <summary>Walks one decoded pool: parses each BL-tagged record, decodes its payload against
-    /// <paramref name="window"/>, and appends the record's reconstruction (header plus decoded payload) to the window
-    /// so the following subgroups can reference it.</summary>
-    private static IReadOnlyList<PoolSubgroup> ReadPool(byte[] pool, List<byte> window)
+    /// <paramref name="window"/>, and appends the record's contribution to the window — its header bytes and its
+    /// payload exactly once — so the following subgroups can reference it. A record whose payload does not fully
+    /// decode contributes its raw bytes, which keeps the distances of the following subgroups plausible.</summary>
+    internal static IReadOnlyList<PoolSubgroup> ReadPool(byte[] pool, List<byte> window)
     {
         var subgroups = new List<PoolSubgroup>();
         int pos = 0;
@@ -48,28 +37,31 @@ internal static class PoolSubgroupReader
             ReadOnlySpan<byte> headerBytes = pool.AsSpan(pos, (int)header.PayloadOffset - pos);
             byte[] data;
             bool partial;
-            switch (header.Mode)
+            if (header.Mode == PlaBlockMode.Lz)
             {
-                case PlaBlockMode.Raw:
+                // The LZ decoder appends every produced byte to the window itself, so the header goes in first and
+                // the payload's contribution is made exactly once — inside DecodeLz.
+                window.AddRange(headerBytes);
+                (data, partial) = DecodeLz(payload, header, window);
+            }
+            else
+            {
+                if (header.Mode == PlaBlockMode.Raw)
+                {
                     data = payload.ToArray();
                     partial = false;
-                    break;
-                case PlaBlockMode.ZeroMask:
+                }
+                else
+                {
                     data = new byte[header.UnpackedSize];
                     PayloadDecoder.DecodeZeroMask(payload, data, out _, out partial);
-                    break;
-                default:
-                    (data, partial) = DecodeLz(payload, header, window);
-                    break;
+                }
+                window.AddRange(headerBytes);
+                // A truncated zero-mask literal leaves the rest of its buffer zero-filled; the window takes the raw
+                // bytes instead, because that is what the saved stream addresses.
+                window.AddRange(partial ? payload.ToArray() : data);
             }
             subgroups.Add(new PoolSubgroup(header, data, partial));
-
-            // The window holds the reconstruction: the header bytes, then the decoded payload — except for a payload
-            // that does not fully decode (a truncated zero-mask literal, a mode-2 stream that fails), where the raw
-            // bytes keep the distances of the following subgroups plausible. Only the tail is kept; a distance
-            // cannot reach further back anyway.
-            window.AddRange(headerBytes);
-            window.AddRange(partial && data.Length != header.UnpackedSize ? payload.ToArray() : data);
             if (window.Count > 4 * WindowTail) window.RemoveRange(0, window.Count - WindowTail);
             pos = (int)header.End;
         }
@@ -80,7 +72,10 @@ internal static class PoolSubgroupReader
     /// payload length at +5 (the length including the header) and the unpacked size at +9 — precedes the token stream;
     /// without it the payload starts with the file block's 9-byte stream header or with the tokens themselves.
     /// Returns the declared unpacked buffer with a zero tail when the stream produces less than declared (partial),
-    /// or empty data with partial set when the stream does not decode at all.</summary>
+    /// or empty data with partial set when the stream does not decode at all. The window receives the payload's
+    /// contribution exactly once: the decoder appends the produced bytes, this method adds the declared tail of a
+    /// buffer block, and a stream that fails has its partial contribution rolled back before the raw bytes go
+    /// in.</summary>
     private static (byte[] Data, bool Partial) DecodeLz(ReadOnlySpan<byte> payload, PlaBlock header, List<byte> window)
     {
         bool hasPoolHeader = payload.Length > 13 && payload[4] == 0x47
@@ -92,12 +87,15 @@ internal static class PoolSubgroupReader
         try
         {
             LzPayloadDecoder.Decode(body, output, window, header.Offset, out int produced);
+            if (produced < header.UnpackedSize)
+                window.AddRange(new byte[(int)(header.UnpackedSize - produced)]); // the buffer space stays addressed
             return (output, produced < header.UnpackedSize);
         }
         catch (InvalidDataException)
         {
-            // The stream does not decode; the caller keeps the raw payload in the window so the distances of the
-            // following subgroups stay plausible.
+            // The decoder rolled its partial contribution back; the raw bytes keep the distances of the following
+            // subgroups plausible.
+            window.AddRange(payload.ToArray());
             return ([], true);
         }
     }

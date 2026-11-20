@@ -51,12 +51,13 @@ API between minor releases.
 - `CompressedPool.ReadSubgroups()` decodes mode-2 pool subgroups. A mode-2 payload is an LZ token stream like a
   mode-2 block payload; it may start with a 13-byte pool header (a u32, the 0x47 marker, the packed payload length
   and the unpacked size) or with the file block's 9-byte stream header. Its back-references reach into the pool
-  stream — the reconstruction of every preceding pool of the document and of this pool before the record — so
-  reading a pool decodes the pools before it in order and the cost of the call grows with the size of the file (the
-  window of the back-references keeps only its 64 KiB tail, so the memory stays constant in the size of the file). A
-  payload that does not decode is reported with empty data and `Partial`, as before. Verified against saved files:
-  every mode-2 subgroup of the corpus decodes (among them 14,446 in a 777 MB office sample). `FindCompressedPools`
-  now caches its list after the first scan, so the pool objects stay identical between calls.
+  stream — the reconstruction of every preceding pool of the document and of this pool before the record — so a read
+  decodes the pools before the named one; reading the pools in file order advances one shared window, so every pool
+  decodes once, and a preceding pool that does not decode is skipped. The window keeps only its 64 KiB tail (a
+  back-reference distance is a u16), so the memory stays constant in the size of the file. A payload that does not
+  decode is reported with empty data and `Partial`, as before. Verified against the saved-file corpus: every mode-2
+  subgroup decodes. `FindCompressedPools` now caches its list after the first scan, so the pool objects stay
+  identical between calls.
 
 ### Changed
 

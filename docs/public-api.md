@@ -74,8 +74,10 @@ Offsets are relative to the decoded pool. The scanner retries an unmatched BL ca
 payload is an LZ token stream like a mode-2 block payload: it may start with a 13-byte pool header (a u32, the 0x47
 marker, the packed payload length and the unpacked size) or with the file block's 9-byte stream header, and its
 back-references reach into the pool stream — the reconstruction of every preceding pool of the document and of this
-pool before the record — so reading a pool decodes the pools before it in order, and the cost of the call grows with
-the size of the file (the window keeps only its 64 KiB tail, so the memory stays constant in the size of the file).
+pool before the record — so a read decodes the pools before the named one. Reading the pools in file order advances
+one shared window, so every pool decodes once; a read that names an earlier pool rebuilds the window, and a
+preceding pool that does not decode is skipped. The window keeps only its 64 KiB tail (a back-reference distance is
+a u16), so the memory stays constant in the size of the file.
 
 | Member | Use |
 |---|---|
