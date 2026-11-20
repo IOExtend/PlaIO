@@ -16,8 +16,8 @@ internal static class PoolSubgroupReader
 
     /// <summary>Walks one decoded pool: parses each BL-tagged record, decodes its payload against
     /// <paramref name="window"/>, and appends the record's contribution to the window — its header bytes and its
-    /// payload exactly once — so the following subgroups can reference it. A record whose payload does not fully
-    /// decode contributes its raw bytes, which keeps the distances of the following subgroups plausible.</summary>
+    /// payload exactly once — so the following subgroups can reference it. A truncated zero-mask payload contributes
+    /// its stored bytes. An undecodable mode-2 payload resets the history.</summary>
     internal static IReadOnlyList<PoolSubgroup> ReadPool(byte[] pool, List<byte> window)
     {
         var subgroups = new List<PoolSubgroup>();
@@ -74,8 +74,7 @@ internal static class PoolSubgroupReader
     /// Returns the declared unpacked buffer with a zero tail when the stream produces less than declared (partial),
     /// or empty data with partial set when the stream does not decode at all. The window receives the payload's
     /// contribution exactly once: the decoder appends the produced bytes, this method adds the declared tail of a
-    /// buffer block, and a stream that fails has its partial contribution rolled back before the raw bytes go
-    /// in.</summary>
+    /// buffer block. A failed stream resets the history so later references cannot reach across the missing output.</summary>
     private static (byte[] Data, bool Partial) DecodeLz(ReadOnlySpan<byte> payload, PlaBlock header, List<byte> window)
     {
         bool hasPoolHeader = payload.Length > 13 && payload[4] == 0x47
@@ -93,9 +92,7 @@ internal static class PoolSubgroupReader
         }
         catch (InvalidDataException)
         {
-            // The decoder rolled its partial contribution back; the raw bytes keep the distances of the following
-            // subgroups plausible.
-            window.AddRange(payload.ToArray());
+            window.Clear();
             return ([], true);
         }
     }

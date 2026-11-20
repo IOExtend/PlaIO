@@ -219,7 +219,7 @@ public sealed class PlaDocument : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_pools is null)
-            _pools = PoolReader.Find(_stream, Length, Blocks).Select(range => new CompressedPool(this, range)).ToList().AsReadOnly();
+            _pools = PoolReader.Find(_stream, Length, Blocks).Select((range, index) => new CompressedPool(this, range, index)).ToList().AsReadOnly();
         return _pools;
     }
 
@@ -237,15 +237,14 @@ public sealed class PlaDocument : IDisposable
     private int _poolWindowThrough;
 
     /// <summary>Reads the subgroups of one pool of this document, decoding the pool stream up to it (see
-    /// <see cref="Model.CompressedPool.ReadSubgroups"/>). A preceding pool that fails to decode is skipped: the
-    /// window continues without it, and the subgroups of the named pool are still read.</summary>
+    /// <see cref="Model.CompressedPool.ReadSubgroups"/>). A preceding pool that fails to decode resets the
+    /// history. Subgroups of the named pool can still use bytes decoded after that gap.</summary>
     internal IReadOnlyList<PoolSubgroup> ReadPoolSubgroups(CompressedPool pool)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var pools = FindCompressedPools();
-        int target = 0;
-        while (target < pools.Count && !ReferenceEquals(pools[target], pool)) target++;
-        if (target == pools.Count)
+        int target = pool.Index;
+        if ((uint)target >= (uint)pools.Count || !ReferenceEquals(pools[target], pool))
             throw new ArgumentException("The pool is not one of the compressed pools of this document.", nameof(pool));
 
         if (_poolWindow is null || target < _poolWindowThrough)
@@ -253,15 +252,15 @@ public sealed class PlaDocument : IDisposable
             _poolWindow = new List<byte>();
             _poolWindowThrough = 0;
         }
-        for (int index = _poolWindowThrough; index < target; index++)
+        for (; _poolWindowThrough < target; _poolWindowThrough++)
         {
             try
             {
-                PoolSubgroupReader.ReadPool(pools[index].Decode(), _poolWindow);
+                PoolSubgroupReader.ReadPool(pools[_poolWindowThrough].Decode(), _poolWindow);
             }
             catch (InvalidDataException)
             {
-                // A pool that does not decode is skipped; the window continues without it.
+                _poolWindow.Clear();
             }
         }
         var subgroups = PoolSubgroupReader.ReadPool(pools[target].Decode(), _poolWindow);

@@ -75,9 +75,10 @@ payload is an LZ token stream like a mode-2 block payload: it may start with a 1
 marker, the packed payload length and the unpacked size) or with the file block's 9-byte stream header, and its
 back-references reach into the pool stream — the reconstruction of every preceding pool of the document and of this
 pool before the record — so a read decodes the pools before the named one. Reading the pools in file order advances
-one shared window, so every pool decodes once; a read that names an earlier pool rebuilds the window, and a
-preceding pool that does not decode is skipped. The window keeps only its 64 KiB tail (a back-reference distance is
-a u16), so the memory stays constant in the size of the file.
+one shared window, so every pool decodes once. A read that names an earlier pool rebuilds the window. A skipped
+pool or an undecodable mode-2 subgroup resets the history. A reference into missing history returns empty data
+with `Partial` set. Subgroups can continue to reference bytes decoded after the gap. A back-reference distance is a
+u16, so the decoder can discard older history between records.
 
 | Member | Use |
 |---|---|

@@ -53,10 +53,9 @@ API between minor releases.
   and the unpacked size) or with the file block's 9-byte stream header. Its back-references reach into the pool
   stream — the reconstruction of every preceding pool of the document and of this pool before the record — so a read
   decodes the pools before the named one; reading the pools in file order advances one shared window, so every pool
-  decodes once, and a preceding pool that does not decode is skipped. The window keeps only its 64 KiB tail (a
-  back-reference distance is a u16), so the memory stays constant in the size of the file. A payload that does not
-  decode is reported with empty data and `Partial`, as before. Verified against the saved-file corpus: every mode-2
-  subgroup decodes. `FindCompressedPools` now caches its list after the first scan, so the pool objects stay
+  decodes once. A skipped pool or an undecodable mode-2 subgroup resets the history. A mode-2 payload that cannot
+  decode is reported with empty data and `Partial`. The decoder discards history beyond the maximum back-reference
+  distance between records. `FindCompressedPools` caches its list after the first scan, so the pool objects stay
   identical between calls.
 
 ### Changed

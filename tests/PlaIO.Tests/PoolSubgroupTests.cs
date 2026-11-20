@@ -124,18 +124,57 @@ public class PoolSubgroupTests
     {
         // Pool 1: structurally valid framing whose compressed frame fails inside the QuickLZ decode, so the pool is
         // found but does not decode. Pool 2 is a plain raw pool and must still be readable.
-        byte[] brokenFrameBody = [0x01, 0x00, 0x00, 0x80, 0xF1, 0xFF]; // control word with a match at an unregistered slot
-        byte[] brokenPool = Synthetic.QuickLzPool((8, Synthetic.QuickLzFrame(brokenFrameBody, 8, flags: 0x45)));
-        byte[] goodContent = Synthetic.Block(PlaBlockMode.Raw, "sample"u8.ToArray());
-        byte[] goodPool = Synthetic.QuickLzPool(
-            ((uint)goodContent.Length, Synthetic.QuickLzFrame(goodContent, goodContent.Length, flags: 0x46)));
-        using var doc = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(brokenPool, goodPool)));
+        byte[] goodPool = StoredPool(Synthetic.Block(PlaBlockMode.Raw, "sample"u8.ToArray()));
+        using var doc = PlaDocument.Open(new MemoryStream(Synthetic.Fdb(UnreadablePool(), goodPool)));
 
         var pools = doc.FindCompressedPools();
         Assert.Equal(2, pools.Count);
         Assert.Throws<InvalidDataException>(() => pools[0].ReadSubgroups());
         var record = Assert.Single(pools[1].ReadSubgroups());
         Assert.Equal("sample"u8.ToArray(), record.Data);
+    }
+
+    [Fact]
+    public void APoolOverTheCapCannotSubstituteHistoryFromAnOlderPool()
+    {
+        byte[] first = StoredPool(Synthetic.Block(PlaBlockMode.Raw, "ABCD"u8.ToArray()));
+        byte[] excluded = StoredPool(Synthetic.Block(PlaBlockMode.Raw, "12345WXYZ"u8.ToArray()));
+        byte[] match = StoredPool(Synthetic.Block(PlaBlockMode.Lz, [0, 0, 21, 4], unpacked: 4));
+        byte[] knownSuffix = StoredPool(Synthetic.Block(PlaBlockMode.Raw, "EFGH"u8.ToArray()));
+        byte[] file = Synthetic.Fdb(first, excluded, match, match, knownSuffix, match);
+        using var unlimited = PlaDocument.Open(new MemoryStream(file));
+        using var limited = PlaDocument.Open(new MemoryStream(file), leaveOpen: false,
+            options: new PlaReaderOptions { MaxDecodedPoolBytes = 21 });
+
+        Assert.Equal("WXYZ"u8.ToArray(), Assert.Single(unlimited.FindCompressedPools()[2].ReadSubgroups()).Data);
+        var pools = limited.FindCompressedPools();
+        for (int index = 2; index <= 3; index++)
+        {
+            var record = Assert.Single(pools[index].ReadSubgroups());
+            Assert.True(record.Partial);
+            Assert.Empty(record.Data);
+        }
+        var recovered = Assert.Single(pools[5].ReadSubgroups());
+        Assert.False(recovered.Partial);
+        Assert.Equal("EFGH"u8.ToArray(), recovered.Data);
+    }
+
+    [Fact]
+    public void FailedTargetReadDoesNotReplayPreviouslyDecodedPools()
+    {
+        byte[] first = StoredPool(Synthetic.Block(PlaBlockMode.Raw, "ABCD"u8.ToArray()));
+        byte[] match = StoredPool(Synthetic.Block(PlaBlockMode.Lz, [0, 0, 38, 4], unpacked: 4));
+        using var stream = new CountingStream(Synthetic.Fdb(first, UnreadablePool(), match));
+        using var doc = PlaDocument.Open(stream);
+
+        var pools = doc.FindCompressedPools();
+        stream.Watch(pools.Select(pool => pool.Offset));
+        Assert.Throws<InvalidDataException>(() => pools[1].ReadSubgroups());
+
+        var record = Assert.Single(pools[2].ReadSubgroups());
+        Assert.True(record.Partial);
+        Assert.Empty(record.Data);
+        Assert.Equal(1, stream.TimesRead(pools[0].Offset));
     }
 
     [Fact]
@@ -271,10 +310,15 @@ public class PoolSubgroupTests
 
     private static PlaDocument OpenPools(params byte[][] data)
     {
-        byte[][] pools = data.Select(content => Synthetic.QuickLzPool(
-            ((uint)content.Length, Synthetic.QuickLzFrame(content, content.Length, flags: 0x46)))).ToArray();
+        byte[][] pools = data.Select(StoredPool).ToArray();
         return PlaDocument.Open(new MemoryStream(Synthetic.Fdb(pools)));
     }
+
+    private static byte[] StoredPool(byte[] content) => Synthetic.QuickLzPool(
+        ((uint)content.Length, Synthetic.QuickLzFrame(content, content.Length, flags: 0x46)));
+
+    private static byte[] UnreadablePool() => Synthetic.QuickLzPool(
+        (8, Synthetic.QuickLzFrame([1, 0, 0, 0x80, 0xF1, 0xFF], 8, flags: 0x45)));
 
     /// <summary>The 13-byte mode-2 pool header: a u32, the 0x47 marker, the packed payload length (including the
     /// header) and the unpacked size, followed by the token stream.</summary>
