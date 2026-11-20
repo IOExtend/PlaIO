@@ -139,6 +139,56 @@ public class PoolSubgroupTests
     }
 
     [Fact]
+    public void ReadingThePoolsInOrderDecodesEachPoolOnce()
+    {
+        // Eight raw pools; a full pass reads every pool's subgroups in file order. The counting stream counts how
+        // often each pool header is read (every decode of a pool starts by reading its 32-byte header), so the test
+        // pins the shared window: N pools decode N times, not N(N+1)/2 = 36 times as a per-call rebuild would.
+        const int count = 8;
+        byte[] file = Synthetic.Fdb(Enumerable.Range(0, count).Select(i =>
+        {
+            byte[] content = Synthetic.Block(PlaBlockMode.Raw, [(byte)i]);
+            return Synthetic.QuickLzPool(((uint)content.Length,
+                Synthetic.QuickLzFrame(content, content.Length, flags: 0x46)));
+        }).ToArray());
+        var counter = new CountingStream(file);
+        using var doc = PlaDocument.Open(counter);
+
+        var pools = doc.FindCompressedPools();
+        Assert.Equal(count, pools.Count);
+        counter.Watch(pools.Select(p => p.Offset)); // the find scan is over; count from here
+
+        foreach (var pool in pools) pool.ReadSubgroups();
+
+        Assert.Equal(count, counter.Total);
+        Assert.All(pools, pool => Assert.Equal(1, counter.TimesRead(pool.Offset)));
+    }
+
+    /// <summary>A stream that counts how often a seek lands on one of the watched offsets — every decode of a pool
+    /// seeks to the pool marker to read its header first.</summary>
+    private sealed class CountingStream(byte[] data) : MemoryStream(data)
+    {
+        private readonly HashSet<long> _watch = [];
+        private readonly Dictionary<long, int> _counts = [];
+
+        public void Watch(IEnumerable<long> offsets)
+        {
+            foreach (long offset in offsets) _watch.Add(offset);
+        }
+
+        public int Total => _counts.Values.Sum();
+
+        public int TimesRead(long offset) => _counts.GetValueOrDefault(offset);
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            if (origin == SeekOrigin.Begin && _watch.Contains(offset))
+                _counts[offset] = _counts.GetValueOrDefault(offset) + 1;
+            return base.Seek(offset, origin);
+        }
+    }
+
+    [Fact]
     public void LzSubgroupWithTheBlockStreamHeaderDecodesWithoutAPoolHeader()
     {
         // A mode-2 payload may instead start with the file block's 9-byte stream header, which the LZ decoder
