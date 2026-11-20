@@ -2,6 +2,8 @@ using System.Text.Json;
 using PlaIO.Internal;
 using Xunit;
 
+using PlaIO.Model;
+
 namespace PlaIO.Tests;
 
 /// <summary>Checks against the private vectors (PLAIO_TEST_VECTORS). Each test loops over the manifest, so it is skipped as a

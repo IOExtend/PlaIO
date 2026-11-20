@@ -1,4 +1,4 @@
-namespace PlaIO;
+namespace PlaIO.Model;
 
 /// <summary>One 30-byte directory record: <c>[u16 class][u64 pos][u32 count][GUID16]</c>. The position and count name a
 /// byte extent of the decoded global stream (see <see cref="PlaDocument.OpenStream"/>), the object's data.</summary>

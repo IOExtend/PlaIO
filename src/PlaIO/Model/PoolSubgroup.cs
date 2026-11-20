@@ -1,4 +1,4 @@
-namespace PlaIO;
+namespace PlaIO.Model;
 
 /// <summary>A BL-tagged record in a decoded compressed pool.</summary>
 public sealed class PoolSubgroup

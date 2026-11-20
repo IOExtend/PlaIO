@@ -46,4 +46,11 @@ internal static class FdbFormat
 
     /// <summary>Reader limit, not a format fact: the largest .bimx cover image that is read into memory.</summary>
     public const long MaxCoverLength = 64L << 20;
+
+    /// <summary>Reader limit, not a format fact: the most bytes one decoded global stream may hold — the largest
+    /// in-memory buffer the reader can build on the running runtime.</summary>
+    public static readonly long MaxGlobalStreamBytes = Array.MaxLength;
+
+    /// <summary>Reader limit, not a format fact: the largest pool one document may decode into memory.</summary>
+    public const long MaxDecodedPoolBytes = 512L << 20;
 }

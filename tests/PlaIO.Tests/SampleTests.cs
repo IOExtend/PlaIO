@@ -1,4 +1,5 @@
 using PlaIO.Internal;
+using PlaIO.Model;
 using Xunit;
 
 namespace PlaIO.Tests;
@@ -141,9 +142,10 @@ public class SampleTests(SampleCorpus corpus) : IClassFixture<SampleCorpus>
     {
         foreach (var sample in corpus.Fdb)
         {
-            sample.Document.DecodeGlobalWindow(out var skipped);
+            var decoded = sample.Document.OpenStream();
+            var skipped = decoded.SkippedBlocks;
             string where = $"{sample.Name}: {skipped.Count} of {sample.Document.Blocks.Count} blocks skipped";
-            Assert.True(skipped.All(s => s.Block.Mode != PlaBlockMode.Lz), $"{where}; a mode-2 block did not decode");
+            Assert.True(skipped.All(b => b.Mode != PlaBlockMode.Lz), $"{where}; a mode-2 block did not decode");
             Assert.True(skipped.Count <= 0.01 * sample.Document.Blocks.Count, where);
         }
     }

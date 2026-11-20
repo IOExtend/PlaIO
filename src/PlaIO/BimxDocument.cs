@@ -34,13 +34,13 @@ public sealed class BimxDocument : IDisposable
 
     /// <summary>Opens the file at <paramref name="path"/> for reading.</summary>
     /// <exception cref="InvalidDataException">The file is not a .bimx file or its cover image is cut short.</exception>
-    public static BimxDocument Open(string path)
+    public static BimxDocument Open(string path, PlaReaderOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(path);
         var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.RandomAccess);
         try
         {
-            return Open(stream, leaveOpen: false);
+            return Open(stream, leaveOpen: false, options);
         }
         catch
         {
@@ -54,13 +54,12 @@ public sealed class BimxDocument : IDisposable
     /// the caller.</summary>
     /// <exception cref="ArgumentException">The stream cannot read or seek.</exception>
     /// <exception cref="InvalidDataException">The data is not a .bimx file or its cover image is cut short.</exception>
-    public static BimxDocument Open(Stream stream, bool leaveOpen = false) => Open(stream, leaveOpen, FdbFormat.MaxCoverLength);
-
-    internal static BimxDocument Open(Stream stream, bool leaveOpen, long maxCoverLength)
+    public static BimxDocument Open(Stream stream, bool leaveOpen = false, PlaReaderOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(stream);
         if (!stream.CanRead || !stream.CanSeek)
             throw new ArgumentException("The stream must be readable and seekable.", nameof(stream));
+        options ??= PlaReaderOptions.Default;
 
         long length = stream.Length;
         var head = new byte[Math.Min(PlaFile.SignatureLength, length)];
@@ -70,7 +69,7 @@ public sealed class BimxDocument : IDisposable
             throw new InvalidDataException($"Not a BIMx file (detected kind: {kind}).");
 
         long coverLength = PngChunks.Measure(stream, 4, length);
-        return new BimxDocument(stream, leaveOpen, length, coverLength, maxCoverLength);
+        return new BimxDocument(stream, leaveOpen, length, coverLength, options.MaxCoverBytes);
     }
 
     /// <summary>The PNG cover image.</summary>

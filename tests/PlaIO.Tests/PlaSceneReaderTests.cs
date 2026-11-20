@@ -1,5 +1,6 @@
 using IOScene;
 using PlaIO.Scene;
+using PlaIO.Model;
 using Xunit;
 
 namespace PlaIO.Tests;

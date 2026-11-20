@@ -59,7 +59,8 @@ public class BimxDocumentTests
     public void CoverAboveTheReaderLimitIsNotRead()
     {
         var png = Synthetic.SimplePng();
-        using var document = BimxDocument.Open(new MemoryStream(Synthetic.Bimx(png, Trailing)), leaveOpen: false, maxCoverLength: png.Length - 1);
+        using var document = BimxDocument.Open(new MemoryStream(Synthetic.Bimx(png, Trailing)),
+            leaveOpen: false, options: new PlaReaderOptions { MaxCoverBytes = png.Length - 1 });
         Assert.Equal(png.Length, document.CoverLength);
         Assert.Throws<InvalidDataException>(() => document.ReadCover());
     }

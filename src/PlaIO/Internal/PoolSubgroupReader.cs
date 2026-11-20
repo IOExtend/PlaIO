@@ -1,3 +1,5 @@
+using PlaIO.Model;
+
 namespace PlaIO.Internal;
 
 internal static class PoolSubgroupReader

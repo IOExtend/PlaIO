@@ -1,3 +1,5 @@
+using PlaIO.Model;
+
 namespace PlaIO.Internal;
 
 /// <summary>Builds the block index in one forward pass: from offset 32, look for a "BL" or "DY" tag, accept a block whose

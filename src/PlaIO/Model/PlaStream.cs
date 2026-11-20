@@ -1,4 +1,4 @@
-namespace PlaIO;
+namespace PlaIO.Model;
 
 /// <summary>The decoded global stream of a document: every block's payload decoded in block order — raw payloads as
 /// they are, zero-mask payloads as their full decode, mode 2 payloads as their token-stream output. The object
@@ -16,10 +16,16 @@ public sealed class PlaStream
     /// Extent reads that reach this boundary throw because the following offsets may be shifted.</summary>
     public long? UnreliableFrom { get; }
 
-    internal PlaStream(List<byte> bytes, long? unreliableFrom)
+    /// <summary>The indexed blocks that failed to decode to their declared size (false entries of the scan), in file
+    /// order; their payloads are missing from the stream, which shifts the offsets that follow
+    /// <see cref="UnreliableFrom"/>.</summary>
+    public IReadOnlyList<PlaBlock> SkippedBlocks { get; }
+
+    internal PlaStream(List<byte> bytes, IReadOnlyList<(PlaBlock Block, long WindowPosition)> skipped)
     {
         _bytes = bytes;
-        UnreliableFrom = unreliableFrom;
+        SkippedBlocks = skipped.Select(pair => pair.Block).ToArray();
+        UnreliableFrom = skipped.Count == 0 ? null : skipped[0].WindowPosition;
     }
 
     /// <summary>Length of the decoded stream in bytes.</summary>

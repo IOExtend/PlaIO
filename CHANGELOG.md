@@ -37,7 +37,23 @@ API between minor releases.
 
 - `CompressedPool.ReadSubgroups()` reads BL-tagged records from decoded pools and reports incomplete payloads.
 
+- `PlaReaderOptions` (with `Default`) caps what the readers decode into memory: `MaxGlobalStreamBytes` bounds the
+  decoded global stream and the window a mode-2 `ReadPayload` builds (default: the most one in-memory stream can
+  hold), `MaxDecodedPoolBytes` bounds one decoded pool (default: 512 MiB) and `MaxCoverBytes` bounds the `.bimx`
+  cover image (default: 64 MiB, previously fixed). `PlaDocument.Open` and `BimxDocument.Open` take the options as an
+  optional last parameter; a read past a cap throws `InvalidDataException` naming it. The caps are reader limits, not
+  facts of the format.
+
+- `PlaStream.SkippedBlocks`: the indexed blocks that failed to decode to their declared size (false entries of the
+  scan), in file order — the blocks behind `UnreliableFrom`.
+
 ### Changed
+
+- The core library follows the IOExtend reference layout (RvtIO, NwcIO): the entry points (`PlaDocument`,
+  `BimxDocument`, `PlaFile`, `PlaReaderOptions`) stay in `PlaIO`, while the document types moved to the namespace
+  `PlaIO.Model` (`FdbHeader`, `PlaBlock` + `PlaBlockMode`, `ObjectDirectory` + `ObjectDirectoryRecord`,
+  `CompressedPool`, `PoolSubgroup`, `PlaStream`). The mode-2 global-window decode moved out of `PlaDocument` into
+  internal machinery; the public surface and behavior are unchanged apart from the namespaces.
 
 - The release workflow follows the IOExtend release order: the NuGet packages are pushed before the GitHub release is
   created (a refused first publication can be fixed and the job re-run, because `--skip-duplicate` makes the push

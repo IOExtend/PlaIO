@@ -1,4 +1,4 @@
-namespace PlaIO;
+namespace PlaIO.Model;
 
 /// <summary>How the payload of a block is stored.</summary>
 public enum PlaBlockMode
@@ -9,8 +9,9 @@ public enum PlaBlockMode
     /// <summary>Mode 1 (flag 0x100): groups of a mask byte and one byte per set bit; clear bits stand for zero bytes.</summary>
     ZeroMask = 1,
 
-    /// <summary>Mode 2 (flag 0x200): a compressed payload. Its compression is not documented, so it cannot be
-    /// decoded.</summary>
+    /// <summary>Mode 2 (flag 0x200): an LZ token stream, decoded by <see cref="PlaDocument.ReadPayload(PlaBlock)"/>.
+    /// The stream may reference the decompressed output of any preceding block, so it is decoded against the global
+    /// window.</summary>
     Lz = 2,
 }
 

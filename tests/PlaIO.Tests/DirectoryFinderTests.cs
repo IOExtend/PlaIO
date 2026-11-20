@@ -1,4 +1,5 @@
 using PlaIO.Internal;
+using PlaIO.Model;
 using Xunit;
 using static PlaIO.Internal.DirectoryFinder;
 
