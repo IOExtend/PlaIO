@@ -32,6 +32,7 @@ dotnet add package PlaIO
 using System;
 using System.IO;
 using PlaIO;
+using PlaIO.Model;
 
 using (var doc = PlaDocument.Open("project.pln"))
 {
