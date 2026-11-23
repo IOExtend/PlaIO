@@ -1,6 +1,7 @@
 using PlaIO.Model;
 using System.Globalization;
 using System.Reflection;
+using System.Text.Json;
 
 namespace PlaIO.CommandLine;
 
@@ -11,11 +12,21 @@ internal static class Cli
     public const int ExitOk = 0;
     public const int ExitUsage = 1;
     public const int ExitInput = 2;
+    private static readonly JsonSerializerOptions ModelJson = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     internal const string UsageText = """
         Usage: plaio info <file>
                plaio blocks <file>
                plaio directory <file> [--out <file.json>]
+               plaio elements <file>
+               plaio stories <file>
+               plaio grids <file>
+               plaio layers <file>
+               plaio materials <file>
+               plaio profiles <file>
+               plaio classifications <file>
+               plaio properties <file>
+               plaio layouts <file>
                plaio --help | --version
 
           info       Kind and length. FDB: header fields (hex), raw header bytes 32..63 (hex),
@@ -26,6 +37,15 @@ internal static class Cli
           directory  FDB only. Searches raw blocks for object directories; prints one summary line
                      per directory (blockOffset recordOffset phase records abutting overlapping duplicates);
                      with --out also writes all records as JSON.
+          elements   FDB only. Writes recognized elements and available basic parameters as JSON.
+          stories    FDB only. Writes the saved project stories as JSON.
+          grids      FDB only. Writes supported straight and circular grid axes as JSON.
+          layers     FDB only. Writes the saved project layer attributes as JSON.
+          materials  FDB only. Writes building materials and composite definitions as JSON.
+          profiles   FDB only. Writes complex profile definitions as JSON.
+          classifications  FDB only. Writes project classification systems and items as JSON.
+          properties  FDB only. Writes user-defined property groups and definitions as JSON.
+          layouts     FDB only. Writes the layout book and placed drawing entries as JSON.
 
         Exit codes: 0 done; 1 usage error (no/unknown command or option, missing, empty or extra argument,
                     --out given twice or without a value);
@@ -46,7 +66,8 @@ internal static class Cli
                 string version = typeof(Cli).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
                 stdout.WriteLine($"plaio {version.Split('+')[0]}");
                 return ExitOk;
-            case "info" or "blocks" or "directory":
+            case "info" or "blocks" or "directory" or "elements" or "stories" or "grids" or "layers" or "materials" or "profiles"
+                or "classifications" or "properties" or "layouts":
                 break;
             default:
                 return Usage(stderr, command.StartsWith('-') ? $"Unknown option '{command}'." : $"Unknown command '{command}'.");
@@ -88,6 +109,42 @@ internal static class Cli
                     break;
                 case "blocks":
                     BlocksCommand(file, stdout);
+                    break;
+                case "elements":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(new { elements = document.ReadElements() }, ModelJson));
+                    break;
+                case "stories":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(new { stories = document.ReadStories() }, ModelJson));
+                    break;
+                case "grids":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(new { grids = document.ReadGridAxes() }, ModelJson));
+                    break;
+                case "layers":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(new { layers = document.ReadLayers() }, ModelJson));
+                    break;
+                case "materials":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(document.ReadMaterialCatalog(), ModelJson));
+                    break;
+                case "profiles":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(new { profiles = document.ReadProfileCatalog() }, ModelJson));
+                    break;
+                case "classifications":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(new { classificationSystems = document.ReadClassificationSystems() }, ModelJson));
+                    break;
+                case "properties":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(document.ReadPropertyCatalog(), ModelJson));
+                    break;
+                case "layouts":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(new { layoutBook = document.ReadLayoutBook() }, ModelJson));
                     break;
                 default:
                     DirectoryCommand(file, output, stdout);

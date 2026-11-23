@@ -1,11 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Turns Archicad containers read by PlaIO into IOScene scene documents. Unpublished while the reader decodes only the container; it ships when elements and geometry are read.</Description>
+    <Description>Turns Archicad elements, properties and supported geometry read by PlaIO into IOScene scene documents.</Description>
     <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- The adapter trigger of the target architecture: it becomes packable and ships on a PlaIO tag when the reader
-         decodes elements and geometry. Until then nothing publishes, so no consumer can build on an empty mapping. -->
+    <!-- The adapter is available as a project reference. -->
     <IsPackable>false</IsPackable>
     <!-- IOScene is referenced by a range whose upper bound is a prerelease ([0.N.0, 0.N+1.0-0.0)); NU5104 is expected. -->
     <NoWarn>$(NoWarn);NU5104</NoWarn>

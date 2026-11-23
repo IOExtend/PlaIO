@@ -5,11 +5,9 @@
 PlaIO is a pure managed .NET library and command line tool that reads the container of Archicad project files (`.pla`,
 `.pln`) and the cover image of BIMx files (`.bimx`) directly from disk, without Archicad and without native dependencies.
 
-In the [IOExtend](https://github.com/IOExtend) ecosystem PlaIO is a leaf engine: it depends on no other IOExtend package
-and on no scene type. The `PlaIO.Scene` adapter in this repository turns an Archicad container into an `IOScene` scene
-document for [IOViewer](https://github.com/IOExtend/IOViewer) and coordination tools; while the reader decodes only the
-container, the scene holds one model and no elements, and the adapter is not published yet — it ships on a `PlaIO`
-release tag when the reader decodes elements and geometry (see [the scene adapter](docs/scene.md)).
+In the [IOExtend](https://github.com/IOExtend) ecosystem PlaIO is a leaf engine with no dependency on scene types.
+The `PlaIO.Scene` adapter maps decoded elements, storeys, grids, properties and supported slab meshes into an `IOScene`
+document for [IOViewer](https://github.com/IOExtend/IOViewer) and coordination tools. See [the scene adapter](docs/scene.md).
 
 ## What it does
 
@@ -19,6 +17,12 @@ release tag when the reader decodes elements and geometry (see [the scene adapte
 - Decodes block payloads stored raw (mode 0), with zero masks (mode 1), or with LZ compression (mode 2).
   Some mode 1 blocks in real files do not decode (see [Limitations](#limitations)).
 - Searches raw blocks for object directories (30-byte records of class number, position, count and object GUID).
+- Reads the object class GUID table and lists recognized model elements with their GUIDs, type and basic parameters
+  where available. See [element coverage](docs/public-api.md#model-elements).
+- Lists project stories with their signed indices, saved names and elevations in metres.
+- Lists supported straight and circular grid axes with their saved labels and geometry in project coordinates.
+- Lists layer attributes with their GUIDs, project-local indices, saved names and intersection groups.
+- Lists complex profile definitions with their GUIDs, indices, names, enabled element types and saved sections.
 - Reads the PNG cover image at the start of a `.bimx` file and reports where the rest of the content begins.
 
 ## Install
@@ -48,6 +52,14 @@ Windows-only APIs and supports Windows, Linux and macOS. Tests currently run on 
 plaio info <file>                            # kind, length, header fields, block counts (or the .bimx cover bounds)
 plaio blocks <file>                          # one tab-separated line per indexed block (.pla, .pln)
 plaio directory <file> [--out <file.json>]   # object directories found in raw blocks (.pla, .pln)
+plaio elements <file>                        # recognized elements as JSON (.pla, .pln)
+plaio stories <file>                         # saved project stories as JSON (.pla, .pln)
+plaio grids <file>                           # supported grid axes as JSON (.pla, .pln)
+plaio layers <file>                          # saved project layers as JSON (.pla, .pln)
+plaio profiles <file>                        # complex profile definitions as JSON (.pla, .pln)
+plaio classifications <file>                 # classification systems and items as JSON (.pla, .pln)
+plaio properties <file>                      # user-defined property catalog as JSON (.pla, .pln)
+plaio layouts <file>                         # layout book and drawing entries as JSON (.pla, .pln)
 plaio --help
 plaio --version
 ```
@@ -66,7 +78,8 @@ phase records abutting overlapping duplicates`. With `--out` it also writes ever
 written under a temporary name next to the target and then moved over it, so a failed write leaves no truncated file. The
 input file name is not written into the JSON.
 
-`blocks` and `directory` work on `.pla` and `.pln` files only. Messages go to standard error, prefixed with `plaio: `.
+`blocks`, `directory`, `elements`, `stories`, `grids`, `layers`, `materials`, `profiles`, `classifications`, `properties` and `layouts` work on `.pla`
+and `.pln` files. Messages go to standard error, prefixed with `plaio: `.
 
 ### Exit codes
 

@@ -76,9 +76,120 @@ public sealed class CliTests : IDisposable
         string bimx = Write("b.bimx", Synthetic.Bimx(Synthetic.SimplePng(), [1, 2]));
         Assert.Equal(2, Run("blocks", bimx).Code);
         Assert.Equal(2, Run("directory", bimx).Code);
+        Assert.Equal(2, Run("stories", bimx).Code);
+        Assert.Equal(2, Run("layers", bimx).Code);
+        Assert.Equal(2, Run("materials", bimx).Code);
+        Assert.Equal(2, Run("profiles", bimx).Code);
+        Assert.Equal(2, Run("classifications", bimx).Code);
+        Assert.Equal(2, Run("properties", bimx).Code);
+        Assert.Equal(2, Run("layouts", bimx).Code);
         Assert.Equal(2, Run("info", Write("cut.pla", Synthetic.Header()[..20])).Code);
         Assert.Equal(2, Run("info", Write("bad.bimx", Synthetic.Bimx([1, 2, 3], []))).Code);
         Assert.Equal(2, Run("info", "a\0b").Code);
+    }
+
+    [Fact]
+    public void ProfilesWritesProjectProfileAttributes()
+    {
+        Guid id = Guid.NewGuid();
+        var (code, output, error) = Run("profiles", Write("profiles.pln", ElementReaderTests.ProfileCatalogFile(id)));
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var json = JsonDocument.Parse(output);
+        var profile = Assert.Single(json.RootElement.GetProperty("profiles").EnumerateArray());
+        Assert.Equal(id, profile.GetProperty("guid").GetGuid());
+        Assert.Equal(3, profile.GetProperty("index").GetInt32());
+        Assert.Equal("Профиль", profile.GetProperty("name").GetString());
+        Assert.True(profile.GetProperty("hasCoreSkin").GetBoolean());
+    }
+
+    [Fact]
+    public void ClassificationsWritesCatalogAndElementsReferenceItsItems()
+    {
+        var fixture = ElementReaderTests.ClassificationFixture();
+        string file = Write("classifications.pln", fixture.File);
+        var (code, output, error) = Run("classifications", file);
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var catalog = JsonDocument.Parse(output);
+        var system = catalog.RootElement.GetProperty("classificationSystems")[0];
+        Assert.Equal(fixture.First, system.GetProperty("guid").GetGuid());
+        Assert.Equal("2024-02-29", system.GetProperty("date").GetString());
+        Assert.Equal(fixture.Branch, system.GetProperty("items")[1].GetProperty("parentGuid").GetGuid());
+
+        (code, output, error) = Run("elements", file);
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var elements = JsonDocument.Parse(output);
+        var element = Assert.Single(elements.RootElement.GetProperty("elements").EnumerateArray(),
+            value => value.GetProperty("guid").GetGuid() == fixture.Classified);
+        var classification = element.GetProperty("classifications")[0];
+        Assert.Equal(fixture.First, classification.GetProperty("systemGuid").GetGuid());
+        Assert.Equal(fixture.Leaf, classification.GetProperty("itemGuid").GetGuid());
+    }
+
+    [Fact]
+    public void PropertiesWritesGroupsAndTypedDefinitionValues()
+    {
+        var fixture = ElementReaderTests.PropertyCatalogFixture(withOverride: true);
+        string file = Write("properties.pln", fixture.File);
+        var (code, output, error) = Run("properties", file);
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var json = JsonDocument.Parse(output);
+        var group = Assert.Single(json.RootElement.GetProperty("groups").EnumerateArray());
+        var definition = Assert.Single(json.RootElement.GetProperty("definitions").EnumerateArray(),
+            value => value.GetProperty("guid").GetGuid() == fixture.Length);
+        Assert.Equal(fixture.Group, group.GetProperty("guid").GetGuid());
+        Assert.Equal(fixture.Group, definition.GetProperty("groupGuid").GetGuid());
+        Assert.Equal("length", definition.GetProperty("dataType").GetString());
+        Assert.Equal(0.125, definition.GetProperty("defaultValue").GetProperty("value").GetDouble());
+
+        (code, output, error) = Run("elements", file);
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var elements = JsonDocument.Parse(output);
+        var element = Assert.Single(elements.RootElement.GetProperty("elements").EnumerateArray());
+        var saved = Assert.Single(element.GetProperty("propertyOverrides").EnumerateArray(),
+            value => value.GetProperty("definitionGuid").GetGuid() == fixture.Length);
+        Assert.Equal(0.5, saved.GetProperty("value").GetProperty("value").GetDouble());
+    }
+
+    [Fact]
+    public void LayoutsWritesTheBookAndPlacedEntries()
+    {
+        var fixture = ElementReaderTests.LayoutBookFixture();
+        var (code, output, error) = Run("layouts", Write("book.pln", fixture.File));
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var json = JsonDocument.Parse(output);
+        var book = json.RootElement.GetProperty("layoutBook");
+        Assert.Equal(fixture.Book, book.GetProperty("guid").GetGuid());
+        var drawing = book.GetProperty("items")[2];
+        Assert.Equal("DrawingItem", drawing.GetProperty("type").GetString());
+        Assert.Equal(fixture.Items[1].Guid, drawing.GetProperty("parentGuid").GetGuid());
+        Assert.Equal(fixture.Items[2].SourceGuid, drawing.GetProperty("sourceGuid").GetGuid());
+        var layout = book.GetProperty("items")[1];
+        Assert.Equal(fixture.Items[1].DatabaseGuid, layout.GetProperty("databaseGuid").GetGuid());
+        Assert.Equal(fixture.Items[1].MasterLayoutGuid, layout.GetProperty("masterLayoutGuid").GetGuid());
+        Assert.Equal(0.420, layout.GetProperty("paperSize").GetProperty("width").GetDouble());
+    }
+
+    [Fact]
+    public void LayoutsWritesIssuedAndOpenRevisionData()
+    {
+        var fixture = ElementReaderTests.LayoutBookFixture(revisions: "mixed");
+        var (code, output, error) = Run("layouts", Write("revisions.pln", fixture.File));
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var json = JsonDocument.Parse(output);
+        var revision = json.RootElement.GetProperty("layoutBook").GetProperty("items")[1].GetProperty("revision");
+        Assert.True(revision.GetProperty("hasIssuedRevision").GetBoolean());
+        Assert.True(revision.GetProperty("hasActualRevision").GetBoolean());
+        Assert.Equal("A", revision.GetProperty("issuedRevisions")[1].GetProperty("id").GetString());
+        Assert.Equal("Draft", revision.GetProperty("openTransmittal").GetProperty("id").GetString());
+        Assert.Equal("01", revision.GetProperty("currentRevisionId").GetString());
+        Assert.Equal(JsonValueKind.Null, revision.GetProperty("currentFinalRevisionId").ValueKind);
     }
 
     [Fact]
@@ -151,6 +262,28 @@ public sealed class CliTests : IDisposable
         var (code, output, _) = Run("directory", Write("a.pla", SampleFdb()));
         Assert.Equal(0, code);
         Assert.Equal(2, output.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+    }
+
+    [Fact]
+    public void ElementsPrintsTheReadOnlyModelAsJson()
+    {
+        Guid id = Guid.NewGuid();
+        string input = Write("model.pln", ElementReaderTests.WallFile(id));
+        var (code, output, error) = Run("elements", input);
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var json = JsonDocument.Parse(output);
+        var element = Assert.Single(json.RootElement.GetProperty("elements").EnumerateArray());
+        Assert.Equal(id, element.GetProperty("guid").GetGuid());
+        Assert.Equal("Wall", element.GetProperty("type").GetString());
+        Assert.Equal("Wall-1", element.GetProperty("elementId").GetString());
+        Assert.Equal(0.25, element.GetProperty("wallThickness").GetDouble());
+        Assert.Equal(5, element.GetProperty("wallReferenceLineChordLength").GetDouble());
+        Assert.Equal(JsonValueKind.Null, element.GetProperty("topLinkedStoryIndex").ValueKind);
+        Assert.Equal(JsonValueKind.Null, element.GetProperty("bottomElevationToProjectZero").ValueKind);
+        Assert.Equal(JsonValueKind.Null, element.GetProperty("topElevationToProjectZero").ValueKind);
+        Assert.Equal(JsonValueKind.Null, element.GetProperty("bottomElevationToHomeStory").ValueKind);
+        Assert.Equal(JsonValueKind.Null, element.GetProperty("topElevationToHomeStory").ValueKind);
     }
 
     [Fact]

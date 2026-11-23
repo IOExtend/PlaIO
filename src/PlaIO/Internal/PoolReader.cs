@@ -73,20 +73,49 @@ internal static class PoolReader
         int written = 0;
         foreach (var frame in frames)
         {
-            Span<byte> output = decoded.AsSpan(written, frame.UnpackedSize);
-            if (frame.IsCompressed)
-            {
-                byte[] input = new byte[frame.PayloadLength];
-                StreamReads.ReadExactlyAt(stream, frame.PayloadOffset, input, "a compressed pool frame");
-                QuickLzLevelOne.Decode(input, output);
-            }
-            else
-            {
-                StreamReads.ReadExactlyAt(stream, frame.PayloadOffset, output, "a stored pool frame");
-            }
-            written += output.Length;
+            DecodeFrame(stream, frame, decoded.AsSpan(written, frame.UnpackedSize));
+            written += frame.UnpackedSize;
         }
         return decoded;
+    }
+
+    public static byte[] ReadPrefix(Stream stream, long length, long offset, int size, long maxDecodedBytes)
+    {
+        var (range, frames) = ReadLayout(stream, length, offset);
+        byte[] prefix = new byte[Math.Min(size, range.UnpackedSize)];
+        int written = 0;
+        foreach (var frame in frames)
+        {
+            if (written == prefix.Length) break;
+            int count = Math.Min(prefix.Length - written, frame.UnpackedSize);
+            var target = prefix.AsSpan(written, count);
+            if (!frame.IsCompressed)
+                StreamReads.ReadExactlyAt(stream, frame.PayloadOffset, target, "a stored pool frame prefix");
+            else
+            {
+                if (frame.UnpackedSize > maxDecodedBytes)
+                    throw InvalidPool(offset, $"a frame exceeds the reader's cap of {maxDecodedBytes} bytes");
+                var decoded = new byte[frame.UnpackedSize];
+                DecodeFrame(stream, frame, decoded);
+                decoded.AsSpan(0, count).CopyTo(target);
+            }
+            written += count;
+        }
+        return prefix;
+    }
+
+    private static void DecodeFrame(Stream stream, Frame frame, Span<byte> output)
+    {
+        if (frame.IsCompressed)
+        {
+            byte[] input = new byte[frame.PayloadLength];
+            StreamReads.ReadExactlyAt(stream, frame.PayloadOffset, input, "a compressed pool frame");
+            QuickLzLevelOne.Decode(input, output);
+        }
+        else
+        {
+            StreamReads.ReadExactlyAt(stream, frame.PayloadOffset, output, "a stored pool frame");
+        }
     }
 
     private static (PoolRange Range, List<Frame> Frames) ReadLayout(Stream stream, long length, long offset)

@@ -1,25 +1,22 @@
 using System.Reflection;
 using IOScene;
+using PlaIO.Model;
 
 namespace PlaIO.Scene;
 
 /// <summary>
-/// Turns an Archicad container (a .pla or .pln file) into a scene (<see cref="SceneDocument"/>): one model for the file,
-/// without elements, properties or geometry while the container reader does not decode them yet.
+/// Turns an Archicad container (a .pla or .pln file) into a scene (<see cref="SceneDocument"/>) with its decoded
+/// elements, levels, grids, properties and supported meshes.
 /// </summary>
 /// <remarks>
-/// <para>The model's <c>Key</c> is the <see cref="PlaSceneOptions.ModelKey"/>, else the file name without its directory.
-/// The derivation is frozen: the key never switches to a better identifier, and the elements this adapter will write get
-/// their persisted identity from it. <c>SourceFormat</c> is the lower-case file extension (<c>pla</c> or <c>pln</c>),
-/// <c>Producer</c> this assembly's name and version.</para>
-/// <para>The scene holds no guesses: what the container reader cannot decode yet (element contents, class names, the
-/// meaning of the object directory records) is not written, and the <c>container-only</c> diagnostic says so.</para>
+/// <para>The persisted identity is the model key together with the saved Archicad element GUID in D format.
+/// The model uses the supplied <see cref="PlaSceneOptions.ModelKey"/> or the file name with its extension.</para>
 /// </remarks>
 public static class PlaSceneReader
 {
     private const int ModelId = 1;
 
-    /// <summary>Reads the container at <paramref name="path"/> and turns it into a scene.</summary>
+    /// <summary>Reads the container at <paramref name="path"/> and converts the decoded model to a scene.</summary>
     /// <exception cref="ArgumentException"><paramref name="path"/> is empty, or <see cref="PlaSceneOptions.ModelKey"/> is empty.</exception>
     public static PlaSceneResult Read(string path, PlaSceneOptions? options = null)
     {
@@ -41,15 +38,120 @@ public static class PlaSceneReader
             SourceFormat = SourceFormat(path),
             Producer = Producer,
         });
-        return new PlaSceneResult
+        bool hasClassTable = document.HasObjectClassTable;
+        var diagnostics = new List<SceneDiagnostic>();
+        var levels = new Dictionary<int, int>();
+        foreach (var story in hasClassTable ? document.ReadStories() : [])
         {
-            Document = scene,
-            Diagnostics =
-            [
-                new(SceneSeverity.Info, "container-only",
-                    "The reader decodes the container only: elements, properties and geometry are not read yet, so the scene has no elements."),
-            ],
-        };
+            int id = scene.Levels.Count + 1;
+            levels.Add(story.Index, id);
+            scene.Levels.Add(new SceneLevel { Id = id, ModelId = ModelId, Name = story.Name, Elevation = story.ElevationToProjectZero });
+        }
+
+        if (hasClassTable) AddGrids(scene, document.ReadGridAxes(), diagnostics);
+        var elements = hasClassTable ? document.ReadElements() : [];
+        if (elements.Count == 0)
+        {
+            if (scene.Grids.Count == 0 && diagnostics.Count == 0)
+                diagnostics.Add(new(SceneSeverity.Info, "container-only", "The model contains no decoded elements."));
+            return new PlaSceneResult { Document = scene, Diagnostics = diagnostics.AsReadOnly() };
+        }
+
+        var properties = new PlaSceneProperties(document.ReadPropertyCatalog());
+        var byGuid = new Dictionary<Guid, SceneElement>(elements.Count);
+        foreach (var element in elements)
+        {
+            var mapped = new SceneElement
+            {
+                Id = scene.Elements.Count + 1,
+                ModelId = ModelId,
+                SourceId = element.Guid.ToString("D"),
+                Name = string.IsNullOrEmpty(element.ElementId) ? element.Type : element.ElementId,
+                Category = element.Type,
+                LevelId = element.HomeStoryIndex is { } index && levels.TryGetValue(index, out int level) ? level : null,
+            };
+            scene.Elements.Add(mapped);
+            byGuid.Add(element.Guid, mapped);
+            properties.Map(scene, element, mapped);
+            if (element.SlabGeometry is { VerticalPrisms: { } prisms } slab)
+                PlaExtrusionMesh.Add(scene, mapped.Id, prisms, slab.Bottom, slab.Top);
+            if (element.WallExtrusion is { } wall)
+                PlaExtrusionMesh.Add(scene, mapped.Id, wall);
+            if (element.ColumnExtrusion is { } column)
+                PlaExtrusionMesh.Add(scene, mapped.Id, column);
+            if (element.ColumnCutMesh is { } cut)
+            {
+                int geometryId = scene.Geometries.Count + 1;
+                scene.Geometries.Add(new SceneGeometry
+                {
+                    Id = geometryId,
+                    Vertices = cut.Vertices.Select(p => new Vector3d(p.X, p.Y, p.Z)).ToArray(),
+                    Indices = cut.Indices,
+                });
+                scene.Instances.Add(new SceneInstance
+                {
+                    ElementId = mapped.Id,
+                    GeometryId = geometryId,
+                    Transform = Transform3d.Identity with { Translation = new Vector3d(cut.Origin.X, cut.Origin.Y, cut.Origin.Z) },
+                });
+            }
+        }
+
+        foreach (var element in elements)
+        {
+            if (element.Type == "Door" && element.HostGuid is { } host &&
+                byGuid.TryGetValue(host, out var parent) && parent.Category == "Wall")
+                byGuid[element.Guid].ParentId = parent.Id;
+        }
+
+        int withoutMesh = elements.Count - scene.Instances.Select(i => i.ElementId).Distinct().Count();
+        if (withoutMesh > 0)
+            diagnostics.Add(new(SceneSeverity.Info, "geometry-incomplete", FormattableString.Invariant(
+                $"Triangle meshes are unavailable for {withoutMesh} of {elements.Count} decoded elements.")));
+        return new PlaSceneResult { Document = scene, Diagnostics = diagnostics.AsReadOnly() };
+    }
+
+    private static void AddGrids(SceneDocument scene, IReadOnlyList<PlaGridAxis> axes, List<SceneDiagnostic> diagnostics)
+    {
+        const double gridChordErrorMetres = 0.001;
+        var grid = new SceneGridSystem { ModelId = ModelId };
+        int missingElevation = 0, untessellated = 0;
+        foreach (var axis in axes)
+        {
+            if (axis.ElevationToProjectZero is not { } elevation)
+            {
+                missingElevation++;
+                continue;
+            }
+
+            if (axis.Arc is null)
+            {
+                grid.Lines.Add(new SceneGridLine
+                {
+                    Name = axis.Label,
+                    Start = new Vector3d(axis.Start.X, axis.Start.Y, elevation),
+                    End = new Vector3d(axis.End.X, axis.End.Y, elevation),
+                    Elevation = elevation,
+                });
+            }
+            else if (axis.Tessellate(gridChordErrorMetres) is { } samples)
+            {
+                (grid.Paths ??= []).Add(new SceneGridPath
+                {
+                    Name = axis.Label,
+                    Points = samples.Select(point => new Vector3d(point.X, point.Y, elevation)).ToList(),
+                });
+            }
+            else untessellated++;
+        }
+
+        if (grid.Lines.Count > 0 || grid.Paths is { Count: > 0 }) scene.Grids.Add(grid);
+        if (missingElevation > 0)
+            diagnostics.Add(new(SceneSeverity.Info, "grid-elevation-unavailable", FormattableString.Invariant(
+                $"Project elevations are unavailable for {missingElevation} of {axes.Count} decoded grid axes.")));
+        if (untessellated > 0)
+            diagnostics.Add(new(SceneSeverity.Info, "grid-tessellation-unavailable", FormattableString.Invariant(
+                $"A path could not be sampled for {untessellated} of {axes.Count} decoded grid axes.")));
     }
 
     private static string? SourceFormat(string path)

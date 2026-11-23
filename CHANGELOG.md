@@ -8,10 +8,134 @@ API between minor releases.
 
 ### Added
 
+- `PlaDocument.ReadEmbeddedLibraryCatalog()` returns verified archived GSM library parts with their original
+  bytes, saved names, main and revision GUIDs, and the offsets of unreadable asset blocks.
+- Embedded library reading follows the decoded asset pool across QuickLZ frame boundaries, including asset
+  records whose headers are stored inside compressed frames.
+- Doors with verified library descriptors expose the main and revision GUIDs recorded on the placed element.
+- Doors on supported straight walls expose their reference line position and nominal sill elevations in project
+  and host-story coordinates in the core reader, CLI and IOScene.
+- Doors expose the wall-hole width and height from verified placed GDL parameter tables.
+
+- `PlaSceneReader.Read()` maps Archicad elements, levels, supported properties and verified slab meshes into IOScene.
+  Straight-edged slabs can have saved holes, supported through cuts from rectangular columns or separate Opening
+  elements, and multiple connected parts.
+- `PlaElement.WallExtrusion` and the scene adapter expose supported straight vertical wall solids and their net
+  volumes, including walls with straight-edged complex profiles and verified zone-area references.
+- Rectangular walls with verified simple Door openings expose closed solids with the through cuts, including
+  supported walls saved without a cached plan outline.
+- Straight walls with an empty plan cache can expose element boxes from their verified inline contour or placed
+  profile. Verified inline contours and reciprocal annotations also support elevations at structural junctions.
+- Supported straight composite walls expose schedule elevations after composite slabs cut through all wall skins,
+  including independently verified cuts at opposite ends. Reciprocal slab labels preserve eligible cutting bands.
+- Supported walls expose schedule elevations after a combination of straight-edged slab cuts, including
+  reciprocal slab subtraction links with vertical extrusion upwards or downwards.
+- Wall end coverage now accounts for verified oblique wall joins, collinear butt joins with different face
+  offsets, and acyclic slab subtractions where each operator cuts the wall in the same direction.
+- Wall elevation checks account for reciprocal Openings located between the wall ends and verify whether
+  openings in a cutting slab reach the cutting band, including supported centered circular openings.
+  Standalone slab labels and typed directory label references can also preserve that band.
+- Walls with verified rectangular door openings can retain their schedule elevations where an intact section
+  reaches both end planes. This includes supported swing doors with and without transoms whose placed GDL parameters
+  confirm the rectangular cut. At supported slab junctions the reader checks the slab contour within the wall strip.
+- Wall elevation checks account for the axial reach of verified beam joints and circular column contacts
+  outside the wall's height range. A verified full cap cut can be combined with a separate slab cut at the opposite end.
+- For supported basic walls with slab cuts at opposite ends, verified rectangular beams can preserve slab
+  coverage where they replace a cutting skin. The reader checks for a remaining wall section beyond the cut.
+- `PlaElement.ColumnExtrusion` and the scene adapter expose supported vertical column solids and their net
+  volumes, including rectangular sections with planar caps and straight-edged profiles split into spans by
+  verified full-section beam cuts.
+- `PlaElement.ColumnCutMesh` and the scene adapter expose supported partial cuts of vertical profiled columns
+  by horizontal or inclined beams, including evaluated elevations and net volume.
+- Column geometry accounts for verified right-angle beam T-junctions, including matching cutters and repeated
+  references to the same end trim.
+- Column cutters can retain their sweep through verified interior beam collisions, angled T-junctions and
+  symmetric miters that clear the column.
+- Columns can retain a verified solid at contacts with weaker composite walls whose skins cannot wrap them.
+- Rotated rectangular columns can retain their solid when validated joined beam caps clear the actual footprint.
+- Rectangular columns support partial cuts by verified coextensive beams where the stronger rectangular section contains the other cutters.
+- Column cuts include the joined caps of verified equal-priority rectangular beams that meet at an angled miter.
+- Columns preserve supported geometry with reciprocal labels, angular dimension anchors or verified beam crossings
+  away from the cutter's caps. Beams also support verified angular dimension anchors.
+- Profiled columns expose element boxes from their saved cap-axis elevations and profile outline, including
+  the plan extension of a centered crosshair symbol.
+- The core reader and scene adapter reconstruct circular columns with horizontal caps. They expose analytic
+  and Archicad listing quantities. The mesh preserves the analytic bounds with a bounded sagitta.
+- `PlaDocument.ReadStories()` and `plaio stories` expose project story indices, saved names and elevations.
+- `PlaDocument.ReadLayers()` and `plaio layers` expose layer GUIDs, indices, saved names and intersection groups.
+- `PlaDocument.ReadMaterialCatalog()` and `plaio materials` expose building materials, connection priorities and ordered
+  composite skins. Supported walls and slabs expose the corresponding material or composite index.
+- `PlaDocument.ReadProfileCatalog()` and `plaio profiles` expose complex profile definitions, enabled element types,
+  section dimensions, stretch limits, named offset modifiers with their default offsets and saved material fills.
+- `PlaDocument.ReadClassificationSystems()` and `plaio classifications` expose the saved classification systems and
+  item hierarchy. `PlaElement.Classifications` and `plaio elements` expose each recognized element's saved assignments.
+- `PlaDocument.ReadPropertyCatalog()` and `plaio properties` expose user-defined property groups, definition types,
+  classification availability, enumeration choices and supported defaults.
+  `PlaElement.PropertyOverrides` exposes supported overrides linked to recognized model elements.
+- `PlaDocument.ReadLayoutBook()` and `plaio layouts` expose the saved layout book, layouts in navigator order,
+  placed drawing entries, source GUIDs and paths, layout databases, assigned masters and paper sizes.
+- Layout entries expose issued revisions in saved order, transmittal date and issuer, and verified open transmittal links.
+- Open layout revisions expose saved IDs and supported automatic numbering, including transmittal overrides.
+- Object membership follows the declared length of the database record, including the longer record in older archives.
+  The supported older Object format also exposes its Element ID, layer index and home story index.
+- Standalone QuickLZ record decoding reads consecutive frames with short or long size headers.
+- `PlaElement.BoundingBox` and `plaio elements` expose project-coordinate 3D extents for supported walls, slabs,
+  zones, vertical columns and horizontal beams, including supported beam junctions and column contacts.
+- Supported horizontal beams expose their evaluated top and bottom elevations in both reference systems,
+  including complex profiles and verified junctions that preserve a transverse section.
+  Straight beams with supported inclined axes or oblique end planes can also expose 3D bounds and elevations.
+  Horizontally curved beams with supported profiles expose 3D bounds and elevations at verified end connections
+  and slab cuts that preserve their extrema.
+  `PlaElement.BeamNetVolume` gives the volume of supported horizontal rectangular beams and inclined prisms.
+  It reports zero when the verified intact portions of higher-priority rectangular beams cover the whole
+  horizontal profiled beam, including supported end extensions.
+- `PlaElement.BeamReferenceAxis` exposes the saved endpoints, inclination and length of straight and horizontally curved beams.
+- `PlaElement.WallReferencePlan` exposes the directed reference line and face offsets for supported straight walls.
+- `PlaElement.WallProfile` exposes the profile attribute index and saved material sections, including holes and circular
+  edges, for supported complex-profile walls.
+- `PlaElement.MemberProfile` exposes the saved material cross-sections and profile attribute index of supported
+  complex-profile beams and columns.
+  A verified inline rectangle also supplies extents and end elevations for supported walls without junctions or a saved 3D box.
+- `PlaElement.SlabGeometry` exposes slab outlines with holes, circular edges, analytic areas and perimeters, and the volume
+  of verified straight-edged extrusions.
+- Slab geometry exposes both gross face areas after verified Opening cuts and deducts their volume from
+  supported slab prisms.
+- Slab volume accounts for verified intersections with vertical rectangular columns and the priorities
+  of the affected slab skins.
+- Slab volume also accounts for verified cuts by straight profiled walls, including cuts that apply to
+  only some slab skins.
+- `PlaElement` exposes Opening shapes, profile dimensions, associated walls and slabs, and verified cut targets.
+  Supported vertical wall openings also have elevations relative to project zero and the home story.
+- `PlaElement` exposes nominal Door dimensions, sill height relative to its saved anchor, and the host wall GUID when both records confirm the relationship.
+- Supported slab openings expose elevations in both reference systems after through and one-sided cuts, including
+  overlapping limited-depth cuts that fully cover another opening's profile.
+- `PlaElement.OpeningGeometry` exposes project XY opening profiles, verified cut intervals by slab and cut volume.
+
+- `PlaDocument.ReadObjectClasses()` resolves file-local class numbers to stored GUIDs and recognizes API type names
+  by GUID. `PlaDocument.ReadElements()` and `plaio elements` expose recognized model elements, their GUIDs and basic
+  parameters such as Element ID and constant-width wall thickness. Objects are selected by the saved database element
+  and grid GUID lists. Element IDs are read from Raw, ZeroMask and standalone QuickLZ records. Zones get their IDs
+  from the linked zone stamp. Elements also carry the effective layer and home story, with names from the saved
+  layer and story tables. Slabs and zones expose bottom and top elevations relative to the home story and project zero.
+  Walls and columns expose the index of the story to which their top is linked. Supported walls and vertical columns
+  expose bottom and top elevations using saved story links, profiles, cut planes and material priorities. Supported
+  rectangular slab junctions can change wall and column end elevations. Isolated higher-priority rectangular beams
+  use their saved section and rotation to cut column ends. Supported perpendicular wall junctions preserve elevations
+  when a remaining section reaches both end planes.
+  Supported sets of horizontal rectangular beams can cut a column together. Verified collinear wall junctions and
+  bounded contacts with beams, columns and slabs can preserve elevations when some wall section reaches both ends.
+  Supported perpendicular beam joins preserve known cutter coverage beyond the junction and at verified T-junctions.
+  A supported horizontal beam or a straight-edged slab outline can define a basic wall's cut end.
+  Verified T-junctions can cut a column with one beam. A composite slab can cut a basic wall at the boundary
+  of its cutting skins.
+  Verified adjacent walls and beams can participate in composite-slab wall cuts when the joined footprint stays covered.
+  Several supported rectangular beams, including verified right-angle beam joins, can extend the same composite-slab cut.
+  See `docs/public-api.md` for the supported layouts.
+
 - The `PlaIO.Scene` adapter project (namespace `PlaIO.Scene`): `PlaSceneReader.Read(path)` turns a `.pla` or `.pln`
   container into an `IOScene` `SceneDocument` — one model per file with the frozen `Key` derivation (the
-  `PlaSceneOptions.ModelKey`, else the file name), no elements yet (the container reader does not decode element
-  contents), and the `container-only` diagnostic. The project is `IsPackable=false` and is not published; it ships on a
+  `PlaSceneOptions.ModelKey`, else the file name), model metadata, and the `container-only` diagnostic.
+  The project is `IsPackable=false` and is not published; it ships on a
   `PlaIO` release tag when the reader decodes elements and geometry. See `docs/scene.md`.
 
 - `PlaDocument.ReadPayload` decodes mode 2 (LZ) payloads. A payload may start with a 9-byte stream header with a

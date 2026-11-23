@@ -2,7 +2,7 @@ using PlaIO.Model;
 
 namespace PlaIO.Internal;
 
-/// <summary>Builds the block index in one forward pass: from offset 32, look for a "BL" or "DY" tag, accept a block whose
+/// <summary>Builds the block index in one forward pass: from the starting offset, look for a "BL" or "DY" tag, accept a block whose
 /// header passes <see cref="BlockHeaderParser.TryParse"/>, continue at the end of its payload (the payload is skipped, not
 /// read), otherwise move one byte on. Memory is one window buffer plus the list.</summary>
 /// <remarks>The step is one byte: blocks are not aligned and may start at any offset, so a two-byte step would miss blocks
@@ -26,12 +26,12 @@ internal sealed class BlockScanner
         _maxBlocks = maxBlocks;
     }
 
-    public List<PlaBlock> Scan()
+    public List<PlaBlock> Scan(long startOffset = FdbFormat.FirstBlockOffset)
     {
         var blocks = new List<PlaBlock>();
         var buffer = new byte[_windowSize + FdbFormat.MaxBlockHeaderLength];
         long winStart = 0, winEnd = 0;
-        long pos = FdbFormat.FirstBlockOffset;
+        long pos = startOffset;
         // The next "BL" and "DY" at or after pos in the current window (searchEnd when there is none); -1 means search again.
         long nextBl = -1, nextDy = -1;
         while (pos + FdbFormat.MinBlockHeaderLength <= _length)
