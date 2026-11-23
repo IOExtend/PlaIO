@@ -3686,6 +3686,8 @@ public partial class ElementReaderTests
     [InlineData(false, false, 2.75, true, 5)]
     [InlineData(false, false, null, true, 6)]
     [InlineData(false, false, null, true, 7)]
+    [InlineData(true, false, null, true, 2)]
+    [InlineData(true, false, null, true, 3)]
     [InlineData(false, false, 2.75, true, 0, 1)]
     [InlineData(false, false, 2.75, true, 0, 2)]
     [InlineData(true, false, 2.75, true, 0, 0, 1)]
@@ -3788,7 +3790,7 @@ public partial class ElementReaderTests
             labelStorage == 1 ? Synthetic.Block(PlaBlockMode.ZeroMask, Synthetic.ZeroMask(labelBody), ver: 1, guid: label,
                 unpacked: (uint)labelBody.Length, kind: 10) : []);
         var result = Assert.Single(doc.ReadElements(), e => e.Guid == wall);
-        double? bottom = cutBothEnds ? top.HasValue ? 0.75 : null : beveled ? null : 0.25;
+        double? bottom = cutBothEnds ? top.HasValue || openingCase == 2 ? 0.75 : null : beveled ? null : 0.25;
         Assert.Equal(bottom, result.BottomElevationToHomeStory);
         Assert.Equal(top, result.TopElevationToHomeStory);
         Assert.Equal(bottom - 4, result.BottomElevationToProjectZero);

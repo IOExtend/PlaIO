@@ -150,7 +150,7 @@ internal static partial class ElementReader
             return geometry.Read(id, PropertyOverrideClass) is { } property &&
                 ReadSingleRelation(property, key, requireSection: true) == slab;
         if (key == CutElementRelation || key == OpeningHostRelation)
-            return SlabOpeningMissesStrip(geometry, slab, key, id, footprint, home, band);
+            return SlabOpeningMissesStrip(geometry, slab, key, id, footprint, home, band, out _);
         if (key == SlabLevelDimensionRelation)
             return geometry.Read(id, SlabLevelDimensionClass) is { } dimension &&
                 ReadSingleRelation(dimension, key, requireSection: true) == slab;

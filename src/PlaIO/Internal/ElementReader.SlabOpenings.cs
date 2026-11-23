@@ -81,8 +81,9 @@ internal static partial class ElementReader
         geometry.Read(id, SlabClass) is { } record ? record.AsSpan(FindClassFrame(record, SlabClass)) : default;
 
     private static bool SlabOpeningMissesStrip(ModelGeometry geometry, Guid slab, Guid role, Guid relation,
-        (double X0, double Y0, double X1, double Y1) strip, double home, Elevations band)
+        (double X0, double Y0, double X1, double Y1) strip, double home, Elevations band, out bool verifiedCut)
     {
+        verifiedCut = false;
         var (opening, target) = role == CutElementRelation ? ReadOpeningCut(geometry, relation) : (relation, slab);
         if (target != slab || geometry.Read(opening, OpeningClass) is not { } record) return false;
         var hostIds = ReadOpeningRelation(record, OpeningHostRelation, owner: true);
@@ -105,6 +106,7 @@ internal static partial class ElementReader
 
         var settings = AfterCountedString(record.AsSpan(FindClassFrame(record, OpeningClass)), ClassElementIdOffset("Opening"));
         if (ReadSlabOpeningLimits(settings, source, story - home) is not { } limits) return false;
+        verifiedCut = true;
         if (limits.Top <= band.Bottom + JunctionTolerance || limits.Bottom >= band.Top - JunctionTolerance) return true;
         if (ReadSlabOpeningOrigin(source) is not { } origin ||
             ReadOpeningProfile(settings) is not { } profile || ReadSlabOpeningPlan(settings, profile) is not { } plan)

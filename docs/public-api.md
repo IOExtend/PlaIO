@@ -216,12 +216,16 @@ may remove material from a slab, PlaIO evaluates the cuts with the full saved sl
 contribution omitted. It reports elevations only if both reproduce the same limits and the full-cut case leaves a
 verified patch at each plane.
 A verified slab opening that misses the cutting band in plan or height can preserve coverage. For a supported
-centered circular opening, the clearance check uses the circumscribed 36-gon. A verified separate opening
+centered circular opening, the clearance check uses the circumscribed 36-gon. If a reciprocal opening may reduce
+a slab cutting band, the reader compares the wall limits with that full band and with the band omitted. It can
+report an end when both limits agree there and the remaining material is verified. A verified separate opening
 in the wall can preserve the reported elevations
 when it lies between those planes. Additional operations that can alter the end sections may leave the schedule
 elevations unavailable.
 
 For a basic wall, a single slab can establish a complete cut through the cap beyond its cutting skins.
+Two or more verified composite slabs can also establish a complete cut when their single cutting skins share
+both elevations and their combined outlines cover the joined wall footprint all the way across.
 PlaIO can combine that verified cap with a separate cut at the opposite end.
 In that case, a horizontal rectangular beam can replace part of the slab's cutting layer when its saved
 connections and material priority confirm that it also cuts the wall. The reader checks the beam's joints

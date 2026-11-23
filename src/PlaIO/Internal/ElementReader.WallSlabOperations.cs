@@ -128,6 +128,8 @@ internal static partial class ElementReader
         completeCaps = [];
         if (geometry.StoryElevation(location.HomeStoryIndex) is not { } home) return null;
         var bands = new List<WallSlabOperation>();
+        var partialCaps = new Dictionary<(bool IsBottom, Elevations Skin), List<WallSlabOperation>>();
+        double floor = bounds.Bottom + home, ceiling = bounds.Top + home;
         foreach (var (joint, _, priority) in contacts)
         {
             if (ReadWallSlabContact(geometry, wall, joint, out Guid slab) is not { } body) return null;
@@ -146,6 +148,7 @@ internal static partial class ElementReader
                 ? [new SlabSkin(planes.Top - planes.Bottom, maximum)]
                 : geometry.Attributes.Composite.GetValueOrDefault(BinaryPrimitives.ReadUInt16LittleEndian(settings[87..]));
             if (skins is null) return null;
+            int firstBand = bands.Count;
             double high = planes.Top, cuttingBottom = double.PositiveInfinity, cuttingTop = double.NegativeInfinity;
             foreach (var skin in skins)
             {
@@ -156,12 +159,7 @@ internal static partial class ElementReader
                 if (skin.Priority >= priority && band.Top > band.Bottom)
                 {
                     bool mayLoseMaterial = false;
-                    if (!HasSupportedSlabContacts(record, SlabWallRelation, joint,
-                        (key, id) => key == SlabWallRelation && IsSameWallSlabPair(geometry, wall, slab, id) ||
-                            SlabContactKeepsCuttingBand(geometry, slab, key, id, skin.Priority, home, wallStrip.Footprint, band) ||
-                            allowSharedBeamCoverage && key == SlabBeamRelation &&
-                            SharedBeamPreservesSlabCoverage(geometry, wall, slab, id, location, home, priority, wallStrip.Footprint) ||
-                            MayLoseAfterWallContact(key, id),
+                    if (!HasSupportedSlabContacts(record, SlabWallRelation, joint, CheckCuttingBand,
                         acceptsOperatorTarget: (target, operation) => IsSlabOperatorTarget(geometry, target, slab, operation)))
                         return null;
                     bands.Add(new WallSlabOperation(new Elevations(low, high), rings, Priority: skin.Priority,
@@ -169,32 +167,61 @@ internal static partial class ElementReader
                     cuttingBottom = Math.Min(cuttingBottom, low);
                     cuttingTop = Math.Max(cuttingTop, high);
 
-                    bool MayLoseAfterWallContact(Guid role, Guid id)
+                    bool CheckCuttingBand(Guid role, Guid id)
                     {
-                        if (!HasSlabWallPeerWithPriority(geometry, slab, role, id)) return false;
-                        mayLoseMaterial = true;
-                        return true;
+                        if (role == CutElementRelation || role == OpeningHostRelation)
+                        {
+                            if (SlabOpeningMissesStrip(geometry, slab, role, id, wallStrip.Footprint, home, band, out bool verifiedCut))
+                                return true;
+                            // A verified opening can only reduce the slab's cutting band.
+                            mayLoseMaterial |= verifiedCut;
+                            return verifiedCut;
+                        }
+                        if (role == SlabWallRelation && IsSameWallSlabPair(geometry, wall, slab, id) ||
+                            SlabContactKeepsCuttingBand(geometry, slab, role, id, skin.Priority, home, wallStrip.Footprint, band) ||
+                            allowSharedBeamCoverage && role == SlabBeamRelation &&
+                            SharedBeamPreservesSlabCoverage(geometry, wall, slab, id, location, home, priority, wallStrip.Footprint))
+                            return true;
+                        bool verifiedWall = HasSlabWallPeerWithPriority(geometry, slab, role, id);
+                        mayLoseMaterial |= verifiedWall;
+                        return verifiedWall;
                     }
                 }
                 high = low;
             }
             if (Math.Abs(high - planes.Bottom) > JunctionTolerance) return null;
-            double floor = bounds.Bottom + home, ceiling = bounds.Top + home;
             bool lowerGap = planes.Bottom <= floor + JunctionTolerance && cuttingBottom > floor + JunctionTolerance;
             bool upperGap = planes.Top >= ceiling - JunctionTolerance && cuttingTop < ceiling - JunctionTolerance;
-            if (basic && composite && settings[8] == 0 && double.IsFinite(cuttingBottom) && (lowerGap || upperGap) &&
-                WallPlanHasGap(wallStrip.Footprint, [rings]) is false)
+            if (!basic || !composite || settings[8] != 0 || !double.IsFinite(cuttingBottom) || !(lowerGap || upperGap))
+                continue;
+            bool? hasGap = WallPlanHasGap(wallStrip.Footprint, [rings]);
+            if (hasGap is true && lowerGap != upperGap && !allowSharedBeamCoverage &&
+                bands.Count == firstBand + 1 && !bands[firstBand].MayLoseMaterial)
             {
-                // A complete slab cut can remove the wall cap beyond its cutting skins.
-                if (ClipBySlab(geometry, location, record, settings, wallStrip.Footprint, bounds, bounds.Bottom, bounds.Top,
-                    out var beams, priority, (wall, slab, joint), allowSharedBeamCoverage: allowSharedBeamCoverage) is not { } clip ||
-                    beams is not null)
-                    return null;
-                if (lowerGap && clip.Bottom > bounds.Bottom && Math.Abs(clip.Bottom + home - cuttingTop) <= JunctionTolerance)
-                    completeCaps.Add((new WallSlabOperation(new Elevations(floor, cuttingTop), rings, Priority: priority), true));
-                if (upperGap && clip.Top < bounds.Top && Math.Abs(clip.Top + home - cuttingBottom) <= JunctionTolerance)
-                    completeCaps.Add((new WallSlabOperation(new Elevations(cuttingBottom, ceiling), rings, Priority: priority), false));
+                var skin = bands[firstBand];
+                var key = (lowerGap, skin.Planes);
+                if (!partialCaps.TryGetValue(key, out var caps)) partialCaps.Add(key, caps = []);
+                caps.Add(skin);
             }
+            if (hasGap is not false) continue;
+
+            // A complete slab cut can remove the wall cap beyond its cutting skins.
+            if (ClipBySlab(geometry, location, record, settings, wallStrip.Footprint, bounds, bounds.Bottom, bounds.Top,
+                out var beams, priority, (wall, slab, joint), allowSharedBeamCoverage: allowSharedBeamCoverage) is not { } clip ||
+                beams is not null)
+                return null;
+            if (lowerGap && clip.Bottom > bounds.Bottom && Math.Abs(clip.Bottom + home - cuttingTop) <= JunctionTolerance)
+                completeCaps.Add((new WallSlabOperation(new Elevations(floor, cuttingTop), rings, Priority: priority), true));
+            if (upperGap && clip.Top < bounds.Top && Math.Abs(clip.Top + home - cuttingBottom) <= JunctionTolerance)
+                completeCaps.Add((new WallSlabOperation(new Elevations(cuttingBottom, ceiling), rings, Priority: priority), false));
+        }
+        foreach (var ((isBottom, skin), caps) in partialCaps)
+        {
+            // Coplanar cutting skins can sever the cap together if their union covers the joined footprint.
+            if (caps.Count < 2 || WallPlanHasGap(wallStrip.Footprint, caps.Select(s => s.Rings).ToArray()) is not false)
+                continue;
+            var end = isBottom ? new Elevations(floor, skin.Top) : new Elevations(skin.Bottom, ceiling);
+            bands.Add(new WallSlabOperation(end, RectangleRing(wallStrip.Footprint), Priority: caps.Min(s => s.Priority)));
         }
         return bands;
     }
