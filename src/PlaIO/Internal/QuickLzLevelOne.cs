@@ -5,6 +5,56 @@ namespace PlaIO.Internal;
 // QuickLZ 1.5.0 level 1, without streaming. See docs/public-api.md for the public format reference.
 internal static class QuickLzLevelOne
 {
+    internal const int LongFrameHeaderSize = 9;
+    internal const int ShortFrameHeaderSize = 3;
+
+    internal static bool TryReadFrameHeader(ReadOnlySpan<byte> data, long available, int remaining,
+        out FrameHeader frame)
+    {
+        frame = default;
+        if (data.Length < ShortFrameHeaderSize || (data[0] & 0xFC) != 0x44) return false;
+        bool longHeader = (data[0] & 2) != 0;
+        int size = longHeader ? LongFrameHeaderSize : ShortFrameHeaderSize;
+        if (data.Length < size) return false;
+        uint packed = longHeader ? BinaryPrimitives.ReadUInt32LittleEndian(data[1..]) : data[1];
+        uint unpacked = longHeader ? BinaryPrimitives.ReadUInt32LittleEndian(data[5..]) : data[2];
+        if (packed < size || packed > available || packed > Array.MaxLength || unpacked > remaining) return false;
+        bool compressed = (data[0] & 1) != 0;
+        long payload = packed - size;
+        if (compressed ? unpacked > 85 * payload : unpacked != payload) return false;
+        frame = new FrameHeader(size, (int)packed, (int)unpacked, compressed);
+        return true;
+    }
+
+    internal static byte[]? ReadFrames(ReadOnlySpan<byte> data, int unpackedSize)
+    {
+        if (data.IsEmpty) return null;
+        var packed = data;
+        int remaining = unpackedSize;
+        while (!packed.IsEmpty)
+        {
+            if (!TryReadFrameHeader(packed, packed.Length, remaining, out var frame)) return null;
+            packed = packed[frame.PackedSize..];
+            remaining -= frame.UnpackedSize;
+        }
+        if (remaining != 0) return null;
+        var body = new byte[unpackedSize];
+        int written = 0;
+        while (!data.IsEmpty)
+        {
+            if (!TryReadFrameHeader(data, data.Length, unpackedSize - written, out var frame)) return null;
+            var source = data[frame.HeaderSize..frame.PackedSize];
+            var target = body.AsSpan(written, frame.UnpackedSize);
+            if (frame.IsCompressed) Decode(source, target);
+            else source.CopyTo(target);
+            written += frame.UnpackedSize;
+            data = data[frame.PackedSize..];
+        }
+        return body;
+    }
+
+    internal readonly record struct FrameHeader(int HeaderSize, int PackedSize, int UnpackedSize, bool IsCompressed);
+
     public static void Decode(ReadOnlySpan<byte> input, Span<byte> output)
     {
         Span<int> matches = stackalloc int[4096];

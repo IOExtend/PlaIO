@@ -16,9 +16,12 @@ plaio info project.pln
 ```sh
 plaio blocks project.pln
 plaio directory project.pln --out directories.json
+plaio stories project.pln
+plaio layers project.pln
+plaio profiles project.pln
 ```
 
-`blocks` lists every indexed block as tab-separated lines. `directory` prints one summary line per object directory found, and with `--out` writes all records as JSON. Both work on `.pla` and `.pln` files only.
+`blocks` lists indexed blocks as tab-separated lines. `directory` prints one summary line per detected object directory, and with `--out` writes its records as JSON. `elements` writes recognized elements and available parameters as JSON. `stories`, `layers` and `profiles` write their project catalogs as JSON. These commands work on `.pla` and `.pln` files.
 
 Run `plaio --help` for the usage. The output columns, the JSON shape and the exit codes are described in [Command line and exit codes](cli.md).
 

@@ -103,6 +103,41 @@ public sealed class PlaDocument : IDisposable
     /// <exception cref="ArgumentException">The block is not one of the <see cref="Blocks"/> of this document.</exception>
     public byte[] ReadPayload(PlaBlock block) => ReadPayload(block, out _);
 
+    internal bool PayloadStartsWithClass(PlaBlock block, Guid expectedClass)
+    {
+        Span<byte> prefix = stackalloc byte[16];
+        if (block.UnpackedSize < prefix.Length) return false;
+        if (block.Mode == PlaBlockMode.Raw)
+        {
+            StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, prefix, "a block class GUID");
+        }
+        else if (block.Mode == PlaBlockMode.ZeroMask)
+        {
+            Span<byte> packed = stackalloc byte[18];
+            packed = packed[..(int)Math.Min(block.PackedSize, packed.Length)];
+            StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, packed, "a packed block class GUID");
+            PayloadDecoder.DecodeZeroMask(packed, prefix, out int written, out _);
+            if (written != prefix.Length) return false;
+        }
+        else return false;
+
+        return new Guid(prefix) == expectedClass;
+    }
+
+    internal byte[]? ReadStandalonePayload(PlaBlock block)
+    {
+        if (block.PackedSize < QuickLzLevelOne.ShortFrameHeaderSize || block.PackedSize > Array.MaxLength) return null;
+        Span<byte> header = stackalloc byte[(int)Math.Min(block.PackedSize, QuickLzLevelOne.LongFrameHeaderSize)];
+        StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, header, "a standalone QuickLZ frame header");
+        if (!QuickLzLevelOne.TryReadFrameHeader(header, block.PackedSize, (int)block.UnpackedSize, out _)) return null;
+
+        var packed = new byte[block.PackedSize];
+        header.CopyTo(packed);
+        StreamReads.ReadExactlyAt(_stream, block.PayloadOffset + header.Length, packed.AsSpan(header.Length),
+            $"the payload of the block at 0x{block.Offset:x}");
+        return QuickLzLevelOne.ReadFrames(packed, (int)block.UnpackedSize);
+    }
+
     internal byte[] ReadPayload(PlaBlock block, out int consumed)
     {
         ArgumentNullException.ThrowIfNull(block);
@@ -112,48 +147,71 @@ public sealed class PlaDocument : IDisposable
         if (index < 0 || !ReferenceEquals(_blocks[index], block))
             throw new ArgumentException($"The block at 0x{block.Offset:x} is not in the block index of this document.", nameof(block));
 
+        return DecodePayload(block, out consumed);
+    }
+
+    internal PlaBlock? ReadDirectoryBlock(long origin, ObjectDirectoryRecord record)
+    {
+        if (origin < 0 || origin > Length || record.Position > (ulong)(Length - origin) / 16) return null;
+        long offset = origin + (long)record.Position * 16;
+        long length = (long)record.Count * 16;
+        if (length < 11 || length > Length - offset) return null;
+
+        Span<byte> header = stackalloc byte[43];
+        header = header[..(int)Math.Min(header.Length, length)];
+        StreamReads.ReadExactlyAt(_stream, offset, header, $"a directory block header at 0x{offset:x}");
+        return BlockHeaderParser.TryParse(header, offset, offset + length, out var block) &&
+            block.Tag == "BL" && block.Version == 1 && block.Guid == record.ObjectId && block.Kind == record.ClassNumber
+            ? block : null;
+    }
+
+    internal byte[]? ReadDirectoryPayload(PlaBlock block) =>
+        block.Mode == PlaBlockMode.Lz ? ReadStandalonePayload(block) : DecodePayload(block, out _);
+
+    private byte[] DecodePayload(PlaBlock block, out int consumed)
+    {
         switch (block.Mode)
         {
             case PlaBlockMode.Raw:
-            {
-                // The index accepts raw payloads of at most 2^28 bytes, so the size fits an array.
-                var payload = new byte[block.PackedSize];
-                StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, payload, $"the payload of the block at 0x{block.Offset:x}");
-                consumed = payload.Length;
-                return payload;
-            }
+                {
+                    // The index accepts raw payloads of at most 2^28 bytes, so the size fits an array.
+                    var payload = new byte[block.PackedSize];
+                    StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, payload, $"the payload of the block at 0x{block.Offset:x}");
+                    consumed = payload.Length;
+                    return payload;
+                }
             case PlaBlockMode.ZeroMask:
-            {
-                // A mask byte yields at most 8 bytes, so a larger declared size cannot decode; reject it before allocating.
-                if ((block.UnpackedSize + 7) / 8 > block.PackedSize)
-                    throw new InvalidDataException($"Mode-1 block at 0x{block.Offset:x} declares {block.UnpackedSize} unpacked bytes from {block.PackedSize} packed bytes; a mask byte yields at most 8.");
-                long needed = Math.Min(block.PackedSize, block.UnpackedSize + (block.UnpackedSize + 7) / 8);
-                var source = new byte[needed];
-                StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, source, $"the payload of the block at 0x{block.Offset:x}");
-                var payload = new byte[block.UnpackedSize];
-                try
                 {
-                    consumed = PayloadDecoder.DecodeZeroMask(source, payload);
+                    // A mask byte yields at most 8 bytes, so a larger declared size cannot decode; reject it before allocating.
+                    if ((block.UnpackedSize + 7) / 8 > block.PackedSize)
+                        throw new InvalidDataException($"Mode-1 block at 0x{block.Offset:x} declares {block.UnpackedSize} unpacked bytes from {block.PackedSize} packed bytes; a mask byte yields at most 8.");
+                    long needed = Math.Min(block.PackedSize, block.UnpackedSize + (block.UnpackedSize + 7) / 8);
+                    var source = new byte[needed];
+                    StreamReads.ReadExactlyAt(_stream, block.PayloadOffset, source, $"the payload of the block at 0x{block.Offset:x}");
+                    var payload = new byte[block.UnpackedSize];
+                    try
+                    {
+                        consumed = PayloadDecoder.DecodeZeroMask(source, payload);
+                    }
+                    catch (InvalidDataException e)
+                    {
+                        throw new InvalidDataException($"Block at 0x{block.Offset:x}: {e.Message}", e);
+                    }
+                    return payload;
                 }
-                catch (InvalidDataException e)
-                {
-                    throw new InvalidDataException($"Block at 0x{block.Offset:x}: {e.Message}", e);
-                }
-                return payload;
-            }
             case PlaBlockMode.Lz:
-            {
-                // The mode-2 token stream references the decompressed output of all preceding blocks, so the whole
-                // file is decoded from the start and the requested block's output is returned. The cost of a call
-                // therefore grows with the size of the file. A preceding block that does not decode is a scanner
-                // false positive and not part of the real stream, so it is skipped.
-                var window = GlobalStreamDecoder.DecodePrefix(this, block, _options.MaxGlobalStreamBytes);
-                // The cap is a property of the whole window and the requested block is part of it, so the check runs
-                // before the block's buffer is allocated.
-                if (window.Count + block.UnpackedSize > _options.MaxGlobalStreamBytes)
-                    throw new InvalidDataException($"The decoded global stream would grow past {_options.MaxGlobalStreamBytes} bytes (the reader's cap) at the block at 0x{block.Offset:x}.");
-                return ReadLzPayload(block, window, out _, out consumed);
-            }
+                {
+                    // The mode-2 token stream references the decompressed output of all preceding blocks, so the whole
+                    // file is decoded from the start and the requested block's output is returned. The cost of a call
+                    // therefore grows with the size of the file. A preceding block that does not decode is a scanner
+                    // false positive and not part of the real stream, so it is skipped.
+                    var window = GlobalStreamDecoder.DecodePrefix(this, block, _options.MaxGlobalStreamBytes);
+                    // The cap is a property of the whole window and the requested block is part of it, so the check runs
+                    // before the block's buffer is allocated.
+                    if (window.Count + block.UnpackedSize > _options.MaxGlobalStreamBytes)
+                        throw new InvalidDataException($"The decoded global stream would grow past {_options.MaxGlobalStreamBytes} bytes (the reader's cap) at the block at 0x{block.Offset:x}.");
+                    return ReadLzPayload(block, window, out _, out consumed);
+                }
             default:
                 throw new NotSupportedException($"Block at 0x{block.Offset:x} uses an unknown payload mode {block.Mode}.");
         }
@@ -213,6 +271,67 @@ public sealed class PlaDocument : IDisposable
         return found.AsReadOnly();
     }
 
+    /// <summary>Whether the block index contains an object class table, before checking its contents.</summary>
+    public bool HasObjectClassTable => ElementReader.HasClassTable(this);
+
+    /// <summary>Reads the file's object class numbers and GUIDs, with names for recognized classes.</summary>
+    /// <exception cref="InvalidDataException">A supported class table is missing, malformed or ambiguous.</exception>
+    public IReadOnlyList<PlaObjectClass> ReadObjectClasses()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return ElementReader.ReadClasses(this);
+    }
+
+    /// <summary>Reads supported embedded GSM library parts and reports unreadable asset blocks.</summary>
+    /// <remarks>The catalog reads archived data directly. The GSM revision may differ from the revision in a placed
+    /// element's library reference. The method does not load linked libraries or execute GSM scripts.</remarks>
+    /// <exception cref="InvalidDataException">The object class table is unusable.</exception>
+    public PlaEmbeddedLibraryCatalog ReadEmbeddedLibraryCatalog()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return EmbeddedLibraryReader.Read(this, ReadObjectClasses());
+    }
+
+    /// <summary>Reads recognized model elements and the basic parameters available in their saved records.</summary>
+    /// <remarks>See the element reader documentation for supported types and parameters.</remarks>
+    /// <exception cref="InvalidDataException">The class table is unusable, an element has conflicting types,
+    /// a recognized element or grid list is truncated, a recognized classification catalog or property record is invalid,
+    /// or a compressed pool cannot be decoded.</exception>
+    public IReadOnlyList<PlaElement> ReadElements() => ElementReader.Read(this, ReadObjectClasses());
+
+    /// <summary>Reads the saved project stories in ascending story index order.</summary>
+    /// <remarks>Returns an empty list if there is no supported story table.</remarks>
+    /// <exception cref="InvalidDataException">The object class table or a recognized story table is invalid.</exception>
+    public IReadOnlyList<PlaStory> ReadStories() => ElementReader.ReadStoryCatalog(this, ReadObjectClasses());
+
+    /// <summary>Reads the identifiable saved project layers in ascending layer index order.</summary>
+    /// <exception cref="InvalidDataException">The object class table is invalid or layer records conflict.</exception>
+    public IReadOnlyList<PlaLayer> ReadLayers() => ElementReader.ReadLayerCatalog(this, ReadObjectClasses());
+
+    /// <summary>Reads saved building material and composite attributes in ascending project-local index order.</summary>
+    /// <exception cref="InvalidDataException">The object class table is invalid or material attribute records conflict.</exception>
+    public PlaMaterialCatalog ReadMaterialCatalog() => ElementReader.ReadMaterialCatalog(this, ReadObjectClasses());
+
+    /// <summary>Reads the saved complex profile definitions in ascending project-local index order.</summary>
+    /// <exception cref="InvalidDataException">The class table is invalid or profile attribute records conflict.</exception>
+    public IReadOnlyList<PlaProfileAttribute> ReadProfileCatalog() => ElementReader.ReadProfileCatalog(this, ReadObjectClasses());
+
+    /// <summary>Reads saved classification systems in GUID order and their items in depth-first order.</summary>
+    /// <remarks>Returns an empty list if the file has no supported classification catalog.</remarks>
+    /// <exception cref="InvalidDataException">The class table, a recognized classification record or its tree is invalid.</exception>
+    public IReadOnlyList<PlaClassificationSystem> ReadClassificationSystems() =>
+        ElementReader.ReadClassificationCatalog(this, ReadObjectClasses()).Systems;
+
+    /// <summary>Reads saved user-defined property groups and definitions in GUID order.</summary>
+    /// <remarks>Includes definitions that are unused by the recognized model elements.</remarks>
+    /// <exception cref="InvalidDataException">The class table, a recognized property record or its group link is invalid.</exception>
+    public PlaPropertyCatalog ReadPropertyCatalog() => ElementReader.ReadPropertyCatalog(this, ReadObjectClasses());
+
+    /// <summary>Reads the saved layout book, its layouts and placed drawing entries in navigator order.</summary>
+    /// <returns>The layout book, or null if the file has no supported layout book.</returns>
+    /// <exception cref="InvalidDataException">A recognized layout record or navigator link is invalid.</exception>
+    public PlaLayoutBook? ReadLayoutBook() => ElementReader.ReadLayoutBook(this, ReadObjectClasses());
+
     /// <summary>Finds compressed pools whose marker and frame headers parse, outside indexed block payloads. The first
     /// call scans the file; later calls return the cached list, so the pool objects stay identical.</summary>
     public IReadOnlyList<CompressedPool> FindCompressedPools()
@@ -228,6 +347,9 @@ public sealed class PlaDocument : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         return PoolReader.Decode(_stream, Length, offset, _options.MaxDecodedPoolBytes);
     }
+
+    internal byte[] ReadPoolPrefix(long offset, int size) =>
+        PoolReader.ReadPrefix(_stream, Length, offset, size, _options.MaxDecodedPoolBytes);
 
     /// <summary>The window that <see cref="Model.PoolSubgroup"/> decoding builds while the pools are read in order:
     /// the tail of the pool-stream reconstruction up to the pool with index <see cref="_poolWindowThrough"/> (that

@@ -12,7 +12,7 @@ PlaIO is a .NET library and command line tool that reads the container structure
 - Searches raw blocks for object directories and returns their records as stored (class number, position, count, GUID).
 - Reads the PNG cover image of a `.bimx` file.
 
-PlaIO reports the structure of a file; it does not read Archicad elements, class names or object contents, and it does not write files. The library targets .NET 8 and .NET 10, uses managed code only, has no package dependencies and supports Windows, Linux and macOS.
+PlaIO reports the structure of a file and reads recognized Archicad elements with their GUIDs, types and available basic parameters. PlaIO reads Archicad files without modifying them. The library targets .NET 8 and .NET 10, uses managed code only, has no package dependencies and supports Windows, Linux and macOS.
 
 ## Where to go next
 

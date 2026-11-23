@@ -5,6 +5,8 @@
   items:
     - name: Public API
       href: public-api.md
+    - name: Reader parity with RvtIO
+      href: reader-parity.md
     - name: Command line and exit codes
       href: cli.md
     - name: Scene adapter
