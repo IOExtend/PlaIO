@@ -20,6 +20,7 @@ internal static class Cli
                plaio directory <file> [--out <file.json>]
                plaio elements <file>
                plaio stories <file>
+               plaio grids <file>
                plaio layers <file>
                plaio materials <file>
                plaio profiles <file>
@@ -38,6 +39,7 @@ internal static class Cli
                      with --out also writes all records as JSON.
           elements   FDB only. Writes recognized elements and available basic parameters as JSON.
           stories    FDB only. Writes the saved project stories as JSON.
+          grids      FDB only. Writes supported straight and circular grid axes as JSON.
           layers     FDB only. Writes the saved project layer attributes as JSON.
           materials  FDB only. Writes building materials and composite definitions as JSON.
           profiles   FDB only. Writes complex profile definitions as JSON.
@@ -64,7 +66,7 @@ internal static class Cli
                 string version = typeof(Cli).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
                 stdout.WriteLine($"plaio {version.Split('+')[0]}");
                 return ExitOk;
-            case "info" or "blocks" or "directory" or "elements" or "stories" or "layers" or "materials" or "profiles"
+            case "info" or "blocks" or "directory" or "elements" or "stories" or "grids" or "layers" or "materials" or "profiles"
                 or "classifications" or "properties" or "layouts":
                 break;
             default:
@@ -115,6 +117,10 @@ internal static class Cli
                 case "stories":
                     using (var document = PlaDocument.Open(file))
                         stdout.WriteLine(JsonSerializer.Serialize(new { stories = document.ReadStories() }, ModelJson));
+                    break;
+                case "grids":
+                    using (var document = PlaDocument.Open(file))
+                        stdout.WriteLine(JsonSerializer.Serialize(new { grids = document.ReadGridAxes() }, ModelJson));
                     break;
                 case "layers":
                     using (var document = PlaDocument.Open(file))

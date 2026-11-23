@@ -95,6 +95,75 @@ public class PlaSceneReaderTests
     }
 
     [Theory]
+    [InlineData("shortened line", false)]
+    [InlineData("hidden arc", true)]
+    public void GridOnlyScenePreservesFullAxesAndProjectElevations(string variant, bool curved)
+    {
+        var (file, id) = ElementReaderTests.GridAxisFixture(variant, withStory: true);
+        using var scope = TempContainer("grids.pln", file);
+        using var source = PlaDocument.Open(scope.Path);
+        var axis = Assert.Single(source.ReadGridAxes());
+        Assert.Equal(id, axis.Guid);
+        Assert.Equal(-2, axis.HomeStoryIndex);
+        Assert.Equal(2.5, axis.ElevationToHomeStory);
+        Assert.Equal(-1.5, axis.ElevationToProjectZero);
+
+        var result = PlaSceneReader.Read(scope.Path);
+        Assert.Empty(result.Diagnostics);
+        var scene = SceneJson.Read(SceneJson.Write(result.Document));
+        Assert.Empty(scene.Validate());
+        Assert.Empty(scene.Elements);
+        var grid = Assert.Single(scene.Grids);
+        Assert.Equal(Assert.Single(scene.Models).Id, grid.ModelId);
+        const double z = -1.5;
+        if (curved)
+        {
+            Assert.Empty(grid.Lines);
+            var path = Assert.Single(grid.Paths!);
+            Assert.Equal(axis.Label, path.Name);
+            Assert.Equal(new Vector3d(axis.Start.X, axis.Start.Y, z), path.Points[0]);
+            Assert.Equal(new Vector3d(axis.End.X, axis.End.Y, z), path.Points[^1]);
+            Assert.All(path.Points, point => Assert.Equal(z, point.Z));
+            Assert.True(path.Points.Count > 2);
+            foreach (var (first, second) in path.Points.Zip(path.Points.Skip(1)))
+            {
+                double midpointRadius = double.Hypot((first.X + second.X) / 2 + 2, (first.Y + second.Y) / 2 - 3);
+                Assert.InRange(2.75 - midpointRadius, 0, 0.001);
+            }
+        }
+        else
+        {
+            Assert.Null(grid.Paths);
+            var line = Assert.Single(grid.Lines);
+            Assert.Equal(axis.Label, line.Name);
+            Assert.Equal(z, line.Elevation);
+            Assert.Equal(new Vector3d(axis.Start.X, axis.Start.Y, z), line.Start);
+            Assert.Equal(new Vector3d(axis.End.X, axis.End.Y, z), line.End);
+        }
+    }
+
+    [Theory]
+    [InlineData("verified", false, 2.5, null, "grid-elevation-unavailable")]
+    [InlineData("nonfinite elevation", true, null, null, "grid-elevation-unavailable")]
+    [InlineData("excessive samples", true, 2.5, -1.5, "grid-tessellation-unavailable")]
+    public void ReportsGridAxesThatCannotBePlacedInScene(string variant, bool withStory, double? offset,
+        double? elevation, string diagnosticCode)
+    {
+        var (file, _) = ElementReaderTests.GridAxisFixture(variant, withStory);
+        using var scope = TempContainer("grids.pln", file);
+        using var source = PlaDocument.Open(scope.Path);
+        var axis = Assert.Single(source.ReadGridAxes());
+        Assert.Equal(offset, axis.ElevationToHomeStory);
+        Assert.Equal(elevation, axis.ElevationToProjectZero);
+
+        var result = PlaSceneReader.Read(scope.Path);
+        Assert.Empty(result.Document.Grids);
+        var diagnostic = Assert.Single(result.Diagnostics);
+        Assert.Equal(SceneSeverity.Info, diagnostic.Severity);
+        Assert.Equal(diagnosticCode, diagnostic.Code);
+    }
+
+    [Theory]
     [InlineData(true, 1, true)]
     [InlineData(true, 2, false)]
     [InlineData(false, 1, false)]

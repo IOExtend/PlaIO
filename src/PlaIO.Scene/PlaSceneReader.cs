@@ -1,11 +1,12 @@
 using System.Reflection;
 using IOScene;
+using PlaIO.Model;
 
 namespace PlaIO.Scene;
 
 /// <summary>
 /// Turns an Archicad container (a .pla or .pln file) into a scene (<see cref="SceneDocument"/>) with its decoded
-/// elements, levels, properties and supported meshes.
+/// elements, levels, grids, properties and supported meshes.
 /// </summary>
 /// <remarks>
 /// <para>The persisted identity is the model key together with the saved Archicad element GUID in D format.
@@ -38,6 +39,7 @@ public static class PlaSceneReader
             Producer = Producer,
         });
         bool hasClassTable = document.HasObjectClassTable;
+        var diagnostics = new List<SceneDiagnostic>();
         var levels = new Dictionary<int, int>();
         foreach (var story in hasClassTable ? document.ReadStories() : [])
         {
@@ -46,13 +48,14 @@ public static class PlaSceneReader
             scene.Levels.Add(new SceneLevel { Id = id, ModelId = ModelId, Name = story.Name, Elevation = story.ElevationToProjectZero });
         }
 
+        if (hasClassTable) AddGrids(scene, document.ReadGridAxes(), diagnostics);
         var elements = hasClassTable ? document.ReadElements() : [];
         if (elements.Count == 0)
-            return new PlaSceneResult
-            {
-                Document = scene,
-                Diagnostics = [new(SceneSeverity.Info, "container-only", "The model contains no decoded elements.")],
-            };
+        {
+            if (scene.Grids.Count == 0 && diagnostics.Count == 0)
+                diagnostics.Add(new(SceneSeverity.Info, "container-only", "The model contains no decoded elements."));
+            return new PlaSceneResult { Document = scene, Diagnostics = diagnostics.AsReadOnly() };
+        }
 
         var properties = new PlaSceneProperties(document.ReadPropertyCatalog());
         var byGuid = new Dictionary<Guid, SceneElement>(elements.Count);
@@ -102,13 +105,53 @@ public static class PlaSceneReader
         }
 
         int withoutMesh = elements.Count - scene.Instances.Select(i => i.ElementId).Distinct().Count();
-        return new PlaSceneResult
+        if (withoutMesh > 0)
+            diagnostics.Add(new(SceneSeverity.Info, "geometry-incomplete", FormattableString.Invariant(
+                $"Triangle meshes are unavailable for {withoutMesh} of {elements.Count} decoded elements.")));
+        return new PlaSceneResult { Document = scene, Diagnostics = diagnostics.AsReadOnly() };
+    }
+
+    private static void AddGrids(SceneDocument scene, IReadOnlyList<PlaGridAxis> axes, List<SceneDiagnostic> diagnostics)
+    {
+        const double gridChordErrorMetres = 0.001;
+        var grid = new SceneGridSystem { ModelId = ModelId };
+        int missingElevation = 0, untessellated = 0;
+        foreach (var axis in axes)
         {
-            Document = scene,
-            Diagnostics = withoutMesh == 0 ? [] :
-                [new(SceneSeverity.Info, "geometry-incomplete", FormattableString.Invariant(
-                    $"Triangle meshes are unavailable for {withoutMesh} of {elements.Count} decoded elements."))],
-        };
+            if (axis.ElevationToProjectZero is not { } elevation)
+            {
+                missingElevation++;
+                continue;
+            }
+
+            if (axis.Arc is null)
+            {
+                grid.Lines.Add(new SceneGridLine
+                {
+                    Name = axis.Label,
+                    Start = new Vector3d(axis.Start.X, axis.Start.Y, elevation),
+                    End = new Vector3d(axis.End.X, axis.End.Y, elevation),
+                    Elevation = elevation,
+                });
+            }
+            else if (axis.Tessellate(gridChordErrorMetres) is { } samples)
+            {
+                (grid.Paths ??= []).Add(new SceneGridPath
+                {
+                    Name = axis.Label,
+                    Points = samples.Select(point => new Vector3d(point.X, point.Y, elevation)).ToList(),
+                });
+            }
+            else untessellated++;
+        }
+
+        if (grid.Lines.Count > 0 || grid.Paths is { Count: > 0 }) scene.Grids.Add(grid);
+        if (missingElevation > 0)
+            diagnostics.Add(new(SceneSeverity.Info, "grid-elevation-unavailable", FormattableString.Invariant(
+                $"Project elevations are unavailable for {missingElevation} of {axes.Count} decoded grid axes.")));
+        if (untessellated > 0)
+            diagnostics.Add(new(SceneSeverity.Info, "grid-tessellation-unavailable", FormattableString.Invariant(
+                $"A path could not be sampled for {untessellated} of {axes.Count} decoded grid axes.")));
     }
 
     private static string? SourceFormat(string path)

@@ -508,18 +508,23 @@ internal static partial class ElementReader
             throw new InvalidDataException($"Object {id:D} has conflicting classes in the directories.");
     }
 
-    private static HashSet<Guid>? ReadGridElements(PlaDocument document, IReadOnlyList<PlaObjectClass> classes)
+    private static HashSet<Guid>? ReadGridElements(PlaDocument document, IReadOnlyList<PlaObjectClass> classes) =>
+        ReadGridStores(document, classes)?.Values.SelectMany(ids => ids).ToHashSet();
+
+    private static Dictionary<Guid, HashSet<Guid>>? ReadGridStores(PlaDocument document, IReadOnlyList<PlaObjectClass> classes)
     {
         var classNumbers = classes.Where(c => c.Guid == GridStoreClass).Select(c => c.Number).ToHashSet();
-        var grids = new HashSet<Guid>();
+        var stores = new Dictionary<Guid, HashSet<Guid>>();
         foreach (var block in document.Blocks)
         {
             if (block.Tag != "BL" || !classNumbers.Contains(block.Kind)) continue;
+            Guid store = block.Guid ?? Guid.Empty;
+            if (!stores.TryGetValue(store, out var grids)) stores.Add(store, grids = []);
             if (block.Version != 1 || block.Mode != PlaBlockMode.Raw ||
                 !ReadRelationshipElements(document.ReadPayload(block), GridStoreClass, GridElementList, grids))
                 return null;
         }
-        return grids;
+        return stores;
     }
 
     private static byte[]? ReadIndexedPayload(ReadOnlySpan<byte> pool, ObjectDirectoryRecord record)

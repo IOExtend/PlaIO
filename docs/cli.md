@@ -12,6 +12,7 @@ standard error and tells success from failure by its exit code. It uses only the
 | `plaio directory <file> [--out <file.json>]` | `.pla`, `.pln` | A tab-separated header line, then one line per object directory found. With `--out`, also every record as JSON. |
 | `plaio elements <file>` | `.pla`, `.pln` | JSON with the recognized elements and their available parameters. |
 | `plaio stories <file>` | `.pla`, `.pln` | JSON with the saved project stories. |
+| `plaio grids <file>` | `.pla`, `.pln` | JSON with supported straight and circular grid axes. |
 | `plaio layers <file>` | `.pla`, `.pln` | JSON with the saved project layer attributes. |
 | `plaio materials <file>` | `.pla`, `.pln` | JSON with building materials and composite definitions. |
 | `plaio profiles <file>` | `.pla`, `.pln` | JSON with complex profile definitions. |
@@ -94,6 +95,15 @@ See the [supported types and parameters](public-api.md#model-elements).
 
 The JSON object has a `stories` array, sorted by ascending `index`. Each story contains the signed `index`, saved
 `name` and nullable `elevationToProjectZero` in metres. An empty saved name is written as an empty string.
+
+### grids
+
+The JSON object has a `grids` array in GUID order. Each entry contains `guid`, the saved start-marker `label`,
+`start` and `end` XY points in project metres, and nullable `homeStoryIndex`. When available, the entry includes
+`elevationToHomeStory` and `elevationToProjectZero` in metres. Circular axes include an `arc`
+with `center`, `radius` in metres and `sweepRadians` counterclockwise. Axes displayed as segments on the floor
+plan include `floorPlanSegmentLength` in metres. Axes whose lines are hidden on the floor plan include
+`isFloorPlanLineHidden`. The endpoints describe the full reference axis. See the [grid API](public-api.md#model-elements).
 
 ### layers
 

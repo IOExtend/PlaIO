@@ -8,6 +8,6 @@ public sealed class PlaSceneResult
     /// <summary>The converted model and its available scene data.</summary>
     public required SceneDocument Document { get; init; }
 
-    /// <summary>Conversion diagnostics for scenes without decoded elements or with incomplete mesh coverage.</summary>
+    /// <summary>Conversion diagnostics for empty scenes or incomplete mesh and grid coverage.</summary>
     public IReadOnlyList<SceneDiagnostic> Diagnostics { get; init; } = [];
 }

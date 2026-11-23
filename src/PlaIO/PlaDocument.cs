@@ -304,6 +304,12 @@ public sealed class PlaDocument : IDisposable
     /// <exception cref="InvalidDataException">The object class table or a recognized story table is invalid.</exception>
     public IReadOnlyList<PlaStory> ReadStories() => ElementReader.ReadStoryCatalog(this, ReadObjectClasses());
 
+    /// <summary>Reads supported straight and circular grid axes in GUID order.</summary>
+    /// <remarks>Returns the full reference geometry from verified model placements, including axes drawn in segments or hidden on the floor plan.</remarks>
+    /// <exception cref="InvalidDataException">The class table, grid store or a recognized story table is invalid,
+    /// or a pool cannot be decoded.</exception>
+    public IReadOnlyList<PlaGridAxis> ReadGridAxes() => ElementReader.ReadGridAxes(this, ReadObjectClasses());
+
     /// <summary>Reads the identifiable saved project layers in ascending layer index order.</summary>
     /// <exception cref="InvalidDataException">The object class table is invalid or layer records conflict.</exception>
     public IReadOnlyList<PlaLayer> ReadLayers() => ElementReader.ReadLayerCatalog(this, ReadObjectClasses());

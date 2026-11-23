@@ -6,7 +6,7 @@ PlaIO is a pure managed .NET library and command line tool that reads the contai
 `.pln`) and the cover image of BIMx files (`.bimx`) directly from disk, without Archicad and without native dependencies.
 
 In the [IOExtend](https://github.com/IOExtend) ecosystem PlaIO is a leaf engine with no dependency on scene types.
-The `PlaIO.Scene` adapter maps decoded elements, storeys, properties and supported slab meshes into an `IOScene`
+The `PlaIO.Scene` adapter maps decoded elements, storeys, grids, properties and supported slab meshes into an `IOScene`
 document for [IOViewer](https://github.com/IOExtend/IOViewer) and coordination tools. See [the scene adapter](docs/scene.md).
 
 ## What it does
@@ -20,6 +20,7 @@ document for [IOViewer](https://github.com/IOExtend/IOViewer) and coordination t
 - Reads the object class GUID table and lists recognized model elements with their GUIDs, type and basic parameters
   where available. See [element coverage](docs/public-api.md#model-elements).
 - Lists project stories with their signed indices, saved names and elevations in metres.
+- Lists supported straight and circular grid axes with their saved labels and geometry in project coordinates.
 - Lists layer attributes with their GUIDs, project-local indices, saved names and intersection groups.
 - Lists complex profile definitions with their GUIDs, indices, names, enabled element types and saved sections.
 - Reads the PNG cover image at the start of a `.bimx` file and reports where the rest of the content begins.
@@ -53,6 +54,7 @@ plaio blocks <file>                          # one tab-separated line per indexe
 plaio directory <file> [--out <file.json>]   # object directories found in raw blocks (.pla, .pln)
 plaio elements <file>                        # recognized elements as JSON (.pla, .pln)
 plaio stories <file>                         # saved project stories as JSON (.pla, .pln)
+plaio grids <file>                           # supported grid axes as JSON (.pla, .pln)
 plaio layers <file>                          # saved project layers as JSON (.pla, .pln)
 plaio profiles <file>                        # complex profile definitions as JSON (.pla, .pln)
 plaio classifications <file>                 # classification systems and items as JSON (.pla, .pln)
@@ -76,7 +78,7 @@ phase records abutting overlapping duplicates`. With `--out` it also writes ever
 written under a temporary name next to the target and then moved over it, so a failed write leaves no truncated file. The
 input file name is not written into the JSON.
 
-`blocks`, `directory`, `elements`, `stories`, `layers`, `materials`, `profiles`, `classifications`, `properties` and `layouts` work on `.pla`
+`blocks`, `directory`, `elements`, `stories`, `grids`, `layers`, `materials`, `profiles`, `classifications`, `properties` and `layouts` work on `.pla`
 and `.pln` files. Messages go to standard error, prefixed with `plaio: `.
 
 ### Exit codes

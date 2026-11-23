@@ -9,7 +9,10 @@ internal static partial class ElementReader
     private static readonly Guid LibraryParameterClass = new("11db227d-dbe4-45af-88b6-6fddea993f71");
     private static readonly Guid LibraryParameterDirectory = new("34d77468-1d98-45b9-958d-1eea37423cb5");
     private static readonly Guid LibraryParameterRelation = new("76ebf0a4-c2ef-483f-a1a8-28d3adde99a0");
+    private static ReadOnlySpan<byte> PlacedLibraryFrame => [1, 0, 0x83, 0, 3, 0, 0, 0, 1, 0, 2, 0];
     private static ReadOnlySpan<byte> LibraryParameterFrame => [1, 0, 8, 0, 0x83, 0, 3, 0, 0, 0, 1, 0, 1, 0];
+    private const int LibraryParameterBase = 57;
+    private const int LibraryParameterRowSize = 72;
     private static readonly (string Name, ushort Type, double? Plain, double Pocket)[] PassageSettings =
     [
         ("AC_WallType", 0, 1, 1),
@@ -88,35 +91,17 @@ internal static partial class ElementReader
 
     private static DoorParameterTable? ReadDoorParameterTable(ReadOnlySpan<byte> data)
     {
-        const int bodyOffset = 39;
-        const int tableOffset = 57;
-        const int trailerSize = 24;
-        const int rowStart = 65;
-        const int rowSize = 72;
-        if (data.Length < rowStart || new Guid(data[..16]) != LibraryParameterClass ||
-            !data[bodyOffset..].StartsWith(LibraryParameterFrame)) return null;
-        uint bodySize = BinaryPrimitives.ReadUInt32LittleEndian(data[35..]);
-        uint tableSize = BinaryPrimitives.ReadUInt32LittleEndian(data[53..]);
-        uint count = BinaryPrimitives.ReadUInt32LittleEndian(data[tableOffset..]);
-        if (bodySize < rowStart - bodyOffset || bodySize > data.Length - bodyOffset - 7 ||
-            bodySize != (long)tableSize + tableOffset + trailerSize - bodyOffset ||
-            tableSize < rowStart - tableOffset || count > (tableSize - (rowStart - tableOffset)) / rowSize)
-            return null;
-        int end = bodyOffset + (int)bodySize;
-        if (BinaryPrimitives.ReadUInt32LittleEndian(data[end..]) != data.Length - end - 4 ||
-            BinaryPrimitives.ReadUInt16LittleEndian(data[(end + 4)..]) != 1) return null;
+        if (!TryReadLibraryParameterFrame(data, out var rows, out _, out var relation)) return null;
 
         double? width = null, height = null;
         int oversizes = 0;
         bool noOversize = true;
         uint passageSettings = 0, plainSettings = 0, pocketSettings = 0;
-        for (int i = 0; i < count; i++)
+        for (int i = 0; i < rows.Length; i += LibraryParameterRowSize)
         {
-            var row = data.Slice(rowStart + i * rowSize, rowSize);
-            var name = row.Slice(32, 32);
-            int terminator = name.IndexOf((byte)0);
-            if (terminator < 0) continue;
-            name = name[..terminator];
+            var row = rows.Slice(i, LibraryParameterRowSize);
+            var name = ReadLibraryParameterName(row);
+            if (name.IsEmpty) continue;
             bool isWidth = name.SequenceEqual("ac_wallhole_width"u8);
             if (!isWidth && !name.SequenceEqual("ac_wallhole_height"u8))
             {
@@ -158,7 +143,54 @@ internal static partial class ElementReader
         }
         if (width is not double w || height is not double h) return null;
 
-        var relation = data[(end + 6)..];
+        var descriptors = ReadLibraryParameterOwners(relation);
+        return descriptors is null ? null : new DoorParameterTable(new(w, h), descriptors,
+            noOversize && oversizes == 15, plainSettings == PlainPassageMask, pocketSettings == PocketPassageMask);
+    }
+
+    private static bool TryReadLibraryParameterFrame(ReadOnlySpan<byte> data, out ReadOnlySpan<byte> rows,
+        out ReadOnlySpan<byte> table, out ReadOnlySpan<byte> relation)
+    {
+        const int rowStart = LibraryParameterBase + 8;
+        const int trailerSize = 24;
+        rows = table = relation = default;
+        if (data.Length < rowStart || new Guid(data[..16]) != LibraryParameterClass ||
+            !data[39..].StartsWith(LibraryParameterFrame) ||
+            !TryReadDeclaredRelations(data, out int end, out relation)) return false;
+        uint tableSize = BinaryPrimitives.ReadUInt32LittleEndian(data[53..]);
+        uint count = BinaryPrimitives.ReadUInt32LittleEndian(data[LibraryParameterBase..]);
+        if (end != (long)LibraryParameterBase + tableSize + trailerSize ||
+            tableSize < rowStart - LibraryParameterBase || count > (tableSize - (rowStart - LibraryParameterBase)) / LibraryParameterRowSize)
+            return false;
+        table = data.Slice(LibraryParameterBase, (int)tableSize);
+        rows = data.Slice(rowStart, (int)count * LibraryParameterRowSize);
+        return true;
+    }
+
+    private static bool TryReadDeclaredRelations(ReadOnlySpan<byte> data, out int end, out ReadOnlySpan<byte> relation)
+    {
+        const int bodyStart = 39;
+        end = 0;
+        relation = default;
+        if (data.Length < bodyStart + 7) return false;
+        uint bodySize = BinaryPrimitives.ReadUInt32LittleEndian(data[35..]);
+        if (bodySize > data.Length - bodyStart - 7) return false;
+        end = bodyStart + (int)bodySize;
+        if (BinaryPrimitives.ReadUInt32LittleEndian(data[end..]) != data.Length - end - 4 ||
+            BinaryPrimitives.ReadUInt16LittleEndian(data[(end + 4)..]) != 1) return false;
+        relation = data[(end + 6)..];
+        return true;
+    }
+
+    private static ReadOnlySpan<byte> ReadLibraryParameterName(ReadOnlySpan<byte> row)
+    {
+        var name = row.Slice(32, 32);
+        int terminator = name.IndexOf((byte)0);
+        return terminator < 0 ? default : name[..terminator];
+    }
+
+    private static HashSet<Guid>? ReadLibraryParameterOwners(ReadOnlySpan<byte> relation)
+    {
         var entry = relation;
         if (!TryReadGeometryRelation(ref relation, out byte tag, out Guid key, out _) ||
             key != LibraryParameterRelation || tag is not (2 or 0x12) || relation is not [0])
@@ -170,12 +202,13 @@ internal static partial class ElementReader
             Guid id = new(ids.Slice(i, 16));
             if (id == Guid.Empty || !descriptors.Add(id)) return null;
         }
-        return descriptors.Count == 0 ? null : new DoorParameterTable(new(w, h), descriptors,
-            noOversize && oversizes == 15, plainSettings == PlainPassageMask, pocketSettings == PocketPassageMask);
-
-        static bool IsScalarLength(ReadOnlySpan<byte> row) =>
-            BinaryPrimitives.ReadUInt16LittleEndian(row[8..]) == 2 &&
-            BinaryPrimitives.ReadUInt64LittleEndian(row[12..]) == 0 &&
-            BinaryPrimitives.ReadUInt32LittleEndian(row[68..]) == sizeof(double);
+        return descriptors.Count == 0 ? null : descriptors;
     }
+
+    private static bool IsScalarLength(ReadOnlySpan<byte> row) => IsScalarNumber(row, 2);
+
+    private static bool IsScalarNumber(ReadOnlySpan<byte> row, ushort type) =>
+        BinaryPrimitives.ReadUInt16LittleEndian(row[8..]) == type &&
+        BinaryPrimitives.ReadUInt64LittleEndian(row[12..]) == 0 &&
+        BinaryPrimitives.ReadUInt32LittleEndian(row[68..]) == sizeof(double);
 }

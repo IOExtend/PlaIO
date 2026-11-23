@@ -10,8 +10,8 @@ None. The library and the command line tool use only the .NET base class library
 third-party code with them. No engine package depends on another IOExtend package.
 
 The `PlaIO.Scene` adapter (not published yet) depends on [`IOScene`](https://github.com/IOExtend/IOScene)
-`[0.1.1, 0.2.0-0.0)`: any patch of the IOScene 0.1 line, no preview of the next (breaking) minor. `IOScene` itself has
-no dependencies.
+`[0.1.2, 0.2.0-0.0)`. Version 0.1.2 adds the grid paths used by the adapter for circular axes. The range excludes
+previews of the next minor. `IOScene` itself has no dependencies.
 
 ## Build-time packages
 

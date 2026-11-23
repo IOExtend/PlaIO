@@ -9,6 +9,10 @@
 - One model and one scene element for each recognized Archicad element. The native type is the category and the
   saved Element ID is the display name when present. Otherwise the category supplies the display name.
 - Saved storeys and their elevations. Scene elements reference their home storey when it resolves to a saved level.
+- Verified straight and circular grid axes in project coordinates and metres. The adapter uses the saved home
+  story elevation plus the axis offset to place each axis. Straight axes carry their full endpoints and circular
+  axes carry ordered paths with at most 1 mm of arc-to-chord error. The scene retains saved axis labels and uses
+  the full reference geometry for axes shown in segments or hidden on the Archicad floor plan.
 - A containment parent for a Door whose verified host is a Wall. Other host and cut-target GUIDs are occurrence
   properties.
 - Supported element, location, classification and quantity properties. Dimensioned numeric values use SI units.
@@ -52,12 +56,14 @@ The adapter uses `archicad:instance` for intrinsic properties. A saved user-defi
 
 | Severity | Code | Meaning |
 |---|---|---|
-| Info | `container-only` | The container has no decoded model elements. |
+| Info | `container-only` | The container has no decoded model elements or grid axes. |
 | Info | `geometry-incomplete` | Reports how many decoded elements have no triangle mesh. |
+| Info | `grid-elevation-unavailable` | Reports grid axes omitted because their elevation relative to project zero is unavailable. |
+| Info | `grid-tessellation-unavailable` | Reports circular grid axes omitted because a path could not be sampled within the error and vertex limits. |
 
-A malformed or ambiguous indexed object class table raises an error.
+A malformed or ambiguous indexed object class table, invalid grid store or invalid recognized story table raises an error.
 
 ## Publication
 
 The adapter is available as a project reference. Its project currently has `IsPackable=false`.
-The package configuration specifies an exact PlaIO dependency and an `IOScene [0.1.1, 0.2.0-0.0)` range.
+The package configuration specifies an exact PlaIO dependency and an `IOScene [0.1.2, 0.2.0-0.0)` range.

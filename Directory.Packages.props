@@ -7,9 +7,8 @@
   <!-- Runtime dependencies of the library: none. See docs/dependencies.md. -->
 
   <ItemGroup>
-    <!-- The scene contract of PlaIO.Scene: any patch of the 0.1 line, no preview of the next (breaking) minor that
-         IOScene publishes. -->
-    <PackageVersion Include="IOScene" Version="[0.1.1, 0.2.0-0.0)" />
+    <!-- Grid paths require IOScene 0.1.2. Keep the upper bound below previews of the next minor. -->
+    <PackageVersion Include="IOScene" Version="[0.1.2, 0.2.0-0.0)" />
   </ItemGroup>
 
   <ItemGroup>

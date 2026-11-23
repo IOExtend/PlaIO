@@ -45,7 +45,7 @@ internal static partial class ElementReader
         id == ComplexSectionClass || id == ProfileShapeClass || id == SlabClass || id == WallClass || id == WallProfileClass ||
         id == WallWallJunctionClass || id == WallSlabJunctionClass || id == WallBeamJunctionClass || id == WallPlanContourClass ||
         id == WallJunctionPointClass || id == BeamBeamJunctionClass || id == BeamSlabJunctionClass ||
-        id == SlabLevelDimensionClass || id == OpeningClass || id == OpeningCutClass || id == DoorClass || id == DoorLibraryClass ||
+        id == SlabLevelDimensionClass || id == OpeningClass || id == OpeningCutClass || id == DoorClass || id == PlacedLibraryClass ||
         id == ElementAssemblyClass || id == ElementAssemblyMemberClass || id == AttachedAnnotationClass || id == AngularDimensionClass ||
         id == ZoneClass || id == ZoneBoundaryCalculationClass || id == PropertyOverrideClass;
 

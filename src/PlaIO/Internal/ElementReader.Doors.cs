@@ -5,7 +5,7 @@ namespace PlaIO.Internal;
 
 internal static partial class ElementReader
 {
-    private static readonly Guid DoorLibraryClass = new("2bfca33d-bd38-49e3-bf6d-52ac8b850b9f");
+    private static readonly Guid PlacedLibraryClass = new("2bfca33d-bd38-49e3-bf6d-52ac8b850b9f");
     private static readonly Guid DoorLibraryRelation = new("672f1c46-64f3-41f5-8a4a-ffdfd86bcbfd");
     private static readonly Guid SimpleDoorOpeningPart = new("f6fab810-3a56-4c74-8eb8-b58738a9ee9b");
     private static readonly Guid SimpleDoorOpeningRevision = new("0adb90d2-efb3-4a46-ae2b-35a98d9eef91");
@@ -60,8 +60,8 @@ internal static partial class ElementReader
     {
         parameterLink = default;
         Guid part = ReadSingleRelation(door, DoorLibraryRelation, 0x11, requireSection: true);
-        if (geometry.Read(part, DoorLibraryClass) is not { Length: >= 89 } descriptor ||
-            !descriptor.AsSpan(39).StartsWith(new byte[] { 1, 0, 131, 0, 3, 0, 0, 0, 1, 0, 2, 0 }) ||
+        if (geometry.Read(part, PlacedLibraryClass) is not { Length: >= 89 } descriptor ||
+            !descriptor.AsSpan(39).StartsWith(PlacedLibraryFrame) ||
             ReadSingleRelation(descriptor, DoorLibraryRelation, 0x12, requireSection: true) != id)
             return null;
         Guid family = new(descriptor.AsSpan(51, 16)), revision = new(descriptor.AsSpan(67, 16));
